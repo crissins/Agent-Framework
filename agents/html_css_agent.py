@@ -20,33 +20,38 @@ def generate_html_css_book_from_json(
     <title>{curriculum.title}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = {{ theme: {{ extend: {{ colors: {{ 
-        'frame-blue': '#dbeafe',
-        'frame-green': '#dcfce7',
-        'frame-yellow': '#fef9c3',
-        'frame-purple': '#ede9fe',
-        'frame-pink': '#fce7f3'
+        'mx-green': '#006341', /* Mexican flag green (dark) */
+        'mx-red': '#CE1126',   /* Mexican flag red */
+        'mx-white': '#ffffff'
     }} }} }} }};</script>
     <style>
+        :root {{
+            --bg: #0b0f13; /* dark background */
+            --card: #0f1720; /* slightly lighter card */
+            --muted: #9ca3af;
+        }}
+        body {{ background: var(--bg); color: var(--mx-white); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }}
         .section-frame {{ border-left-width: 6px; padding: 1.25rem; margin: 1.5rem 0; }}
-        .qr-placeholder {{
+        .chapter-card {{ background: var(--card); border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 6px 18px rgba(2,6,23,0.6); }}
+        .mx-accent-green {{ color: var(--mx-white); border-left: 6px solid #006341; background: linear-gradient(90deg, rgba(0,99,65,0.04), transparent); padding-left: 1rem; }}
+        .mx-accent-red {{ color: var(--mx-white); border-left: 6px solid #CE1126; background: linear-gradient(90deg, rgba(206,17,38,0.04), transparent); padding-left: 1rem; }}
++        .qr-placeholder {{
             position: fixed;
             bottom: 1.5rem;
             right: 1.5rem;
             width: 120px;
             height: 120px;
-            background: white;
-            border: 1px solid #e5e7eb;
+            background: var(--mx-white);
             border-radius: 0.5rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             z-index: 50;
         }}
         .qr-placeholder img {{ width: 100px; height: 100px; }}
-    </style>
++    </style>
 </head>
-<body class="bg-gray-50">
+<body>
 <div class="max-w-4xl mx-auto px-4 py-8">
     <header class="text-center mb-12">
         <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">{curriculum.title}</h1>
@@ -64,10 +69,13 @@ def generate_html_css_book_from_json(
         placeholder_html = _generate_placeholders(chapter)
 
         html += f"""
-        <article class="chapter bg-white rounded-xl shadow-sm p-6 mb-8">
-            <h2 class="text-2xl font-bold text-gray-900 mb-6">{chapter.chapter_title}</h2>
+        <article class="chapter-card mb-8">
+            <h2 class="text-2xl font-bold mb-6" style="color:var(--mx-white);">{chapter.chapter_title}</h2>
++
             {md_html}
++
             {placeholder_html}
++
         </article>
         """
 

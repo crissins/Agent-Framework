@@ -1,34 +1,54 @@
 import markdown
 from models.book_spec import BookOutput
 
+
 def generate_html_book(output: BookOutput, output_path: str):
-    html = f"""<!DOCTYPE html>
-<html lang="{output.book_request.language[:2]}">
+    """Generate a simple dark-themed HTML book using Mexican flag colors.
+
+    The function builds the HTML from the provided BookOutput and writes it to disk.
+    """
+    template = """<!DOCTYPE html>
+<html lang="{lang}">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{output.curriculum.title}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .section-frame {{ border-left-width: 6px; padding: 1.25rem; margin: 1.5rem 0; }}
-        .frame-blue {{ border-left-color: #4A90E2; background-color: #F0F8FF; }}
-        .frame-green {{ border-left-color: #50C878; background-color: #F0FFF0; }}
-        .frame-yellow {{ border-left-color: #FFD700; background-color: #FFFACD; }}
-        .frame-purple {{ border-left-color: #9370DB; background-color: #F5F5DC; }}
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title}</title>
+  <style>
+    :root {{ --bg: #0b0f13; --card: #0f1720; --mx-white: #ffffff; --mx-green: #006341; --mx-red: #CE1126; --muted: #9ca3af; }}
+    body {{ background: var(--bg); color: var(--mx-white); font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin: 0; padding: 28px; }}
+    .container {{ max-width: 900px; margin: 0 auto; padding: 0 16px; }}
+    .chapter-card {{ background: var(--card); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 6px 18px rgba(2,6,23,0.6); }}
+    h1, h2, h3 {{ color: var(--mx-white); margin: 0 0 12px 0; }}
+    .meta {{ color: var(--muted); margin-bottom: 18px; }}
+    .mx-accent-green {{ border-left: 6px solid var(--mx-green); padding-left: 12px; }}
+    .mx-accent-red {{ border-left: 6px solid var(--mx-red); padding-left: 12px; }}
+    a {{ color: #93c5fd; }}
+    img {{ max-width: 100%; height: auto; }}
+  </style>
 </head>
-<body class="bg-gray-50 p-6">
-    <header class="text-center mb-12">
-        <h1 class="text-3xl font-bold">{output.curriculum.title}</h1>
-        <p class="text-lg text-gray-600">{output.curriculum.description}</p>
+<body>
+  <div class="container">
+    <header style="text-align:center; margin: 28px 0 36px 0;">
+      <h1>{title}</h1>
+      <p class="meta">{description}</p>
     </header>
-    <main>"""
+    {chapters}
+  </div>
+</body>
+</html>"""
 
+    chapter_blocks = []
     for ch in output.chapters:
-        md_html = markdown.markdown(ch.markdown_content, extensions=["extra"])
-        html += f'<article class="mb-8"><h2 class="text-2xl font-bold mb-4">{ch.chapter_title}</h2>{md_html}</article>'
+        md_html = markdown.markdown(ch.markdown_content or "", extensions=["extra"]) if ch.markdown_content is not None else ""
+        block = f"<article class=\"chapter-card\"><h2>{ch.chapter_title}</h2>{md_html}</article>"
+        chapter_blocks.append(block)
 
-    html += "</main></body></html>"
+    rendered = template.format(
+        lang=output.book_request.language[:2],
+        title=output.curriculum.title,
+        description=output.curriculum.description,
+        chapters="\n".join(chapter_blocks),
+    )
 
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        f.write(rendered)
