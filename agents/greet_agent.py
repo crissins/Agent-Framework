@@ -2,11 +2,10 @@ import os
 from agent_framework import ChatAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest
-import os
 
 async def create_greet_agent():
     client = OpenAIChatClient(
-        api_key=os.getenv("OPENAI_API_KEY"),
+        api_key=os.getenv("GITHUB_TOKEN"),
         base_url="https://models.inference.ai.azure.com",
         model_id="gpt-4o-mini"
     )
@@ -14,7 +13,7 @@ async def create_greet_agent():
         name="GreetAgent",
         instructions=(
             "You are a friendly educational assistant that collects book creation requests. "
-            "You always respond with structured JSON matching the BookRequest schema."
+            "Respond with structured JSON matching BookRequest."
         ),
     )
 

@@ -11,7 +11,8 @@ from models.book_spec import BookRequest, Curriculum, ChapterContent
 from agents.greet_agent import create_greet_agent, get_book_request
 from agents.curriculum_agent import create_curriculum_agent, generate_curriculum
 from agents.chapter_agent import create_chapter_agent, generate_chapter
-from agents.html_agent import generate_html_book
+from agents.html_agent import   generate_html_book
+from agents.html_css_agent import generate_html_css_book_from_json
 
 load_dotenv()
 
@@ -83,20 +84,56 @@ if st.button("🚀 Generate Full Book"):
     }
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Save JSON
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     json_path = f"book_output_{timestamp}.json"
+    output_data = {
+        "book_request": request.model_dump(),
+        "curriculum": curriculum.model_dump(),
+        "chapters": [c.model_dump() for c in full_chapters]
+    }
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-    # === Step 5: Generate HTML ===
-    html_content = asyncio.run(generate_html_book(full_chapters))
+    # ✅ Generate HTML from structured data (NOT from undefined 'chapters')
+    from models.book_spec import BookRequest, Curriculum, ChapterContent
+    book_request = BookRequest(**output_data["book_request"])
+    curriculum = Curriculum(**output_data["curriculum"])
+    chapters = [ChapterContent(**ch) for ch in output_data["chapters"]]
+
+    from agents.html_css_agent import generate_html_css_book_from_json
     html_path = f"libro_interactivo_{timestamp}.html"
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
+    generate_html_css_book_from_json(book_request, curriculum, chapters, html_path)
+
+    # Save to session state for UI
+    st.session_state.book_generated = True
+    st.session_state.json_path = json_path
+    st.session_state.html_path = html_path
+
+    # === Generate final artifacts ===
+    # Build a BookOutput object so helpers that expect the full output can consume it
+    from models.book_spec import BookOutput
+    book_output = BookOutput(book_request=book_request, curriculum=curriculum, chapters=chapters)
+
+    # Prefer the styled HTML generator (html_css_agent) which accepts structured inputs
+    html_path = f"libro_interactivo_{timestamp}.html"
+    generate_html_css_book_from_json(book_request, curriculum, chapters, html_path)
+
+    # Also provide a simpler HTML generator if needed (accepts BookOutput)
+    # from agents.html_agent import generate_html_book
+    # generate_html_book(book_output, html_path)
+
+    # Save Markdown using the markdown helper which expects BookOutput
+    from agents.markdown_agent import save_markdown_book
+    md_path = f"libro_interactivo_{timestamp}.md"
+    save_markdown_book(book_output, md_path)
 
     # === Save to session state ===
     st.session_state.book_generated = True
     st.session_state.json_path = json_path
     st.session_state.html_path = html_path
+    st.session_state.md_path = md_path
     st.session_state.output_data = output_data
     st.session_state.curriculum = curriculum
     st.session_state.full_chapters = full_chapters
@@ -117,10 +154,13 @@ if st.session_state.book_generated:
                 st.image(f"{ch.videos[0].qr_code}", width=120, caption="Scan to watch")
 
     # === Download Buttons (always visible after generation) ===
-    colA, colB = st.columns(2)
+    colA, colB, colC = st.columns(3)
     with colA:
         with open(st.session_state.json_path, "rb") as f:
-            st.download_button("📥 Download JSON", f, file_name=st.session_state.json_path, mime="application/json")
+            st.download_button("📥 JSON", f, file_name=st.session_state.json_path)
     with colB:
         with open(st.session_state.html_path, "rb") as f:
-            st.download_button("🌐 Download HTML Book", f, file_name=st.session_state.html_path, mime="text/html")
+            st.download_button("🌐 HTML Book", f, file_name=st.session_state.html_path, mime="text/html")
+    with colC:
+        with open(st.session_state.md_path, "rb") as f:
+            st.download_button("📝 Markdown", f, file_name=st.session_state.md_path, mime="text/markdown")

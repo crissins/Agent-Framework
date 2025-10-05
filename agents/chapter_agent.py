@@ -1,4 +1,5 @@
 # agents/chapter_agent.py
+import re
 import os
 from agent_framework import ChatAgent
 from agent_framework.openai import OpenAIChatClient
@@ -30,21 +31,12 @@ async def create_chapter_agent():
     )
 
 async def generate_chapter(agent: ChatAgent, outline: ChapterOutline, context: dict) -> ChapterContent:
-    # Build rich prompt with context
     prompt = (
-        f"Escribe un capítulo completo titulado '{outline.title}' para niños de {context['age']} años en {context['country']}, "
-        f"usando el método {context['learning_method']} y en {context['language']}. "
-        f"Resumen del capítulo: {outline.summary}. "
-        f"El capítulo debe tener aproximadamente {context['pages_per_chapter']} páginas de contenido rico y estructurado. "
-        f"Incluye todas las secciones requeridas en las instrucciones del agente."
+        f"Write a full chapter titled '{outline.title}' for a {context['age']}-year-old "
+        f"in {context['country']}, using {context['learning_method']} method, in {context['language']}. "
+        f"Summary: {outline.summary}. Make it interactive and about {context['pages_per_chapter']} pages long."
     )
-
-    # Run with higher token limit for chapters
-    response = await agent.run(
-        prompt,
-        max_tokens=2000  # Allow longer, richer output
-    )
-    
+    response = await agent.run(prompt, max_tokens=4000)
     return ChapterContent(
         chapter_title=outline.title,
         markdown_content=response.text

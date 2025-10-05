@@ -1,4 +1,3 @@
-# models/book_spec.py
 from typing import List
 from pydantic import BaseModel
 
@@ -20,18 +19,14 @@ class Curriculum(BaseModel):
     description: str
     chapters: List[ChapterOutline]
 
-class ImagePlaceholder(BaseModel):
-    description: str
-    url: str
-
-class VideoPlaceholder(BaseModel):
-    query: str
-    title: str
-    url: str
-    qr_code: str  # URL to QR image (not base64 for simplicity)
-
 class ChapterContent(BaseModel):
     chapter_title: str
     markdown_content: str
-    images: List[ImagePlaceholder] = []
-    videos: List[VideoPlaceholder] = []
+    # image/video placeholders kept for future use
+    images: List[str] = []
+    videos: List[str] = []
+
+class BookOutput(BaseModel):
+    book_request: BookRequest
+    curriculum: Curriculum
+    chapters: List[ChapterContent]
