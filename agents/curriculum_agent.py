@@ -1,12 +1,12 @@
 import os
 from typing import Optional
-from agent_framework import ChatAgent
-from agent_framework.openai import OpenAIChatClient
+from agent_framework import RawAgent
+from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 from models.book_spec import BookRequest, Curriculum
 from config import get_model_config
 
 
-async def create_curriculum_agent(use_qwen: bool = False) -> ChatAgent:
+async def create_curriculum_agent(use_qwen: bool = False) -> RawAgent:
     """
     Create a curriculum design agent using either GitHub Models or Qwen.
     
@@ -26,8 +26,8 @@ async def create_curriculum_agent(use_qwen: bool = False) -> ChatAgent:
         model_id=config["model_id"]
     )
     
-    agent = ChatAgent(
-        chat_client=client,
+    agent = RawAgent(
+        client=client,
         name="CurriculumAgent",
         instructions=(
             "You are an expert curriculum designer for LATAM K-12 education. "
@@ -47,7 +47,7 @@ async def create_curriculum_agent(use_qwen: bool = False) -> ChatAgent:
     return agent
 
 
-async def generate_curriculum(agent: ChatAgent, request: BookRequest) -> Optional[Curriculum]:
+async def generate_curriculum(agent: RawAgent, request: BookRequest) -> Optional[Curriculum]:
     """
     Generate a structured curriculum for the book.
     
@@ -82,9 +82,8 @@ async def generate_curriculum(agent: ChatAgent, request: BookRequest) -> Optiona
         print(f"{'='*80}\n")
         
         response = await agent.run(
-            prompt, 
-            response_format=Curriculum, 
-            max_tokens=2000
+            prompt,
+            options=OpenAIChatOptions(response_format=Curriculum, max_tokens=2000)
         )
         
         # Log output

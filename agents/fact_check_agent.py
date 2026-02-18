@@ -5,14 +5,14 @@ Uses DashScope OpenAI-compatible API with enable_search parameter.
 """
 import os
 from typing import Optional
-from agent_framework import ChatAgent
+from agent_framework import RawAgent
 from agent_framework.openai import OpenAIChatClient
 from config import get_model_config
 
 import asyncio
 
 
-async def create_fact_check_agent(use_qwen: bool = True) -> ChatAgent:
+async def create_fact_check_agent(use_qwen: bool = True) -> RawAgent:
     """
     Create a fact-checking agent using Qwen with web search capabilities.
     
@@ -65,7 +65,7 @@ async def create_fact_check_agent(use_qwen: bool = True) -> ChatAgent:
 
 
 async def fact_check_content(
-    agent: Agent,
+    agent: RawAgent,
     content: str,
     topic: Optional[str] = None,
     context: Optional[str] = None
@@ -138,7 +138,7 @@ FACT-CHECK INSTRUCTIONS:
 
 
 async def batch_fact_check(
-    agent: Agent,
+    agent: RawAgent,
     content_list: list,
     topics: Optional[list] = None
 ) -> list:
@@ -170,7 +170,7 @@ async def batch_fact_check(
 
 
 async def verify_chapter_accuracy(
-    agent: Agent,
+    agent: RawAgent,
     chapter_title: str,
     chapter_content: str,
     age_group: Optional[str] = None

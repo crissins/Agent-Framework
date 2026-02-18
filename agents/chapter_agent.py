@@ -2,13 +2,13 @@
 import re
 import os
 from typing import Optional, Dict, Any
-from agent_framework import ChatAgent
-from agent_framework.openai import OpenAIChatClient
+from agent_framework import RawAgent
+from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 from models.book_spec import ChapterOutline, ChapterContent
 from config import get_model_config
 
 
-async def create_chapter_agent(use_qwen: bool = False) -> ChatAgent:
+async def create_chapter_agent(use_qwen: bool = False) -> RawAgent:
     """
     Create a chapter writing agent using either GitHub Models or Qwen.
     
@@ -28,8 +28,8 @@ async def create_chapter_agent(use_qwen: bool = False) -> ChatAgent:
         model_id=config["model_id"]
     )
     
-    agent = ChatAgent(
-        chat_client=client,
+    agent = RawAgent(
+        client=client,
         name="ChapterAgent",
         instructions=(
             "You are an expert in creating interactive, engaging educational content for children in LATAM. "
@@ -56,7 +56,7 @@ async def create_chapter_agent(use_qwen: bool = False) -> ChatAgent:
 
 
 async def generate_chapter(
-    agent: ChatAgent,
+    agent: RawAgent,
     outline: ChapterOutline,
     context: Dict[str, Any]
 ) -> Optional[ChapterContent]:
@@ -102,7 +102,7 @@ async def generate_chapter(
         
         response = await agent.run(
             prompt,
-            max_tokens=4000
+            options=OpenAIChatOptions(max_tokens=4000)
         )
         
         # Extract placeholders
