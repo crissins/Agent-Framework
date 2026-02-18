@@ -19,12 +19,18 @@ class Curriculum(BaseModel):
     description: str
     chapters: List[ChapterOutline]
 
+class ImagePlaceholder(BaseModel):
+    description: str
+    url: str
+
 class ChapterContent(BaseModel):
     chapter_title: str
     markdown_content: str
     # image/video placeholders kept for future use
     images: List[str] = []
     videos: List[str] = []
+    image_placeholders: List[str] = []
+    generated_images: List[ImagePlaceholder] = []
 
 class BookOutput(BaseModel):
     book_request: BookRequest

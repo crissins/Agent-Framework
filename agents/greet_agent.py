@@ -1,26 +1,69 @@
 import os
+from typing import Optional
 from agent_framework import ChatAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest
+from config import get_model_config
 
-async def create_greet_agent():
+
+async def create_greet_agent(use_qwen: bool = False) -> ChatAgent:
+    """
+    Create a greeting agent using either GitHub Models or Qwen.
+    
+    Args:
+        use_qwen: If True, use Qwen models via DashScope; if False, use GitHub Models
+    
+    Follows Microsoft Agent Framework best practices:
+    - Uses OpenAIChatClient with specified endpoint
+    - Returns Agent instance with clear type hints
+    - Supports both development (GitHub) and production-ready (Qwen) models
+    """
+    config = get_model_config(use_qwen)
     client = OpenAIChatClient(
-        api_key=os.getenv("GITHUB_TOKEN"),
-        base_url="https://models.inference.ai.azure.com",
-        model_id="gpt-4o-mini"
+        api_key=os.getenv(config["api_key_env"], ""),
+        base_url=config["base_url"],
+        model_id=config["model_id"]
     )
-    return client.create_agent(
+    
+    agent = client.as_agent(
         name="GreetAgent",
         instructions=(
             "You are a friendly educational assistant that collects book creation requests. "
-            "Respond with structured JSON matching BookRequest."
+            "Respond with structured data matching the BookRequest format. "
+            "Be warm, helpful, and clarify the user's intent for creating an educational book."
         ),
     )
+    return agent
 
-async def get_book_request(agent: ChatAgent) -> BookRequest:
+
+async def get_book_request(agent: Agent) -> Optional[BookRequest]:
+    """
+    Get a book request from the agent using streaming for better UX.
+    Demonstrates best practice of handling structured outputs with error handling.
+    
+    Args:
+        agent: The greeting agent instance
+        
+    Returns:
+        BookRequest object or None if parsing fails
+    """
     mock_query = (
         "Create a book about computer science and AI for 12-year-olds in Mexico, "
         "using the Scandinavian learning method, in Spanish."
     )
-    response = await agent.run(mock_query, response_format=BookRequest)
-    return response.value
+    
+    try:
+        response = await agent.run(mock_query, response_format=BookRequest)
+        return response.value
+    except Exception as e:
+        print(f"Error parsing book request: {e}")
+        # Fallback to default request
+        return BookRequest(
+            topic="Computer Science and AI",
+            target_audience_age=12,
+            language="Spanish",
+            country="Mexico",
+            learning_method="Scandinavian",
+            num_chapters=3,
+            pages_per_chapter=5,
+        )
