@@ -1,12 +1,12 @@
 import os
 from typing import Optional
-from agent_framework import ChatAgent
+from agent_framework import RawAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest
 from config import get_model_config
 
 
-async def create_greet_agent(use_qwen: bool = False) -> ChatAgent:
+async def create_greet_agent(use_qwen: bool = False) -> RawAgent:
     """
     Create a greeting agent using either GitHub Models or Qwen.
     
@@ -36,7 +36,7 @@ async def create_greet_agent(use_qwen: bool = False) -> ChatAgent:
     return agent
 
 
-async def get_book_request(agent: Agent) -> Optional[BookRequest]:
+async def get_book_request(agent: RawAgent) -> Optional[BookRequest]:
     """
     Get a book request from the agent using streaming for better UX.
     Demonstrates best practice of handling structured outputs with error handling.

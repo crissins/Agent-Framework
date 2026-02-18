@@ -1,0 +1,5 @@
+books/
+__pycache__/
+agents/__pycache__/
+models/__pycache__/
+venv/

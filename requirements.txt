@@ -1,0 +1,30 @@
+# Core Dependencies
+agent-framework==1.0.0b260212
+python-dotenv
+
+# LLM & API Clients
+openai
+azure-identity
+
+# Image Generation
+dashscope
+
+# Web UI
+streamlit
+markdown
+
+# Utilities
+requests
+pydantic
+aiohttp
+fpdf2
+
+# Optional: Video & Search Support
+qrcode
+pillow
+duckduckgo-search
+
+# Optional: Development Tools
+pytest
+black
+pylint
