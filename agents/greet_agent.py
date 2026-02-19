@@ -53,7 +53,7 @@ async def get_book_request(agent: RawAgent) -> Optional[BookRequest]:
     )
     
     try:
-        response = await agent.run(mock_query, response_format=BookRequest)
+        response = await agent.run(mock_query, options={"response_format": BookRequest})
         return response.value
     except Exception as e:
         print(f"Error parsing book request: {e}")

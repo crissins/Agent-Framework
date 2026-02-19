@@ -1,12 +1,12 @@
 import os
 from typing import Optional
 from agent_framework import RawAgent
-from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
+from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest, Curriculum
 from config import get_model_config
 
 
-async def create_curriculum_agent(use_qwen: bool = False) -> RawAgent:
+async def create_curriculum_agent(use_qwen: bool = False, model_id: str | None = None) -> RawAgent:
     """
     Create a curriculum design agent using either GitHub Models or Qwen.
     
@@ -20,10 +20,12 @@ async def create_curriculum_agent(use_qwen: bool = False) -> RawAgent:
     - Supports both development and production workflows
     """
     config = get_model_config(use_qwen)
+    # Allow explicit model override when using Qwen
+    resolved_model_id = model_id if model_id else config.get("model_id")
     client = OpenAIChatClient(
         api_key=os.getenv(config["api_key_env"], ""),
         base_url=config["base_url"],
-        model_id=config["model_id"]
+        model_id=resolved_model_id
     )
     
     agent = RawAgent(
@@ -83,7 +85,7 @@ async def generate_curriculum(agent: RawAgent, request: BookRequest) -> Optional
         
         response = await agent.run(
             prompt,
-            options=OpenAIChatOptions(response_format=Curriculum, max_tokens=2000)
+            options={"response_format": Curriculum, "max_tokens": 2000}
         )
         
         # Log output

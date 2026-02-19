@@ -23,9 +23,15 @@ from agents.chapter_agent import create_chapter_agent, generate_chapter
 from agents.qwen_image_agent import generate_chapter_image
 from agents.html_css_agent import generate_html_css_book_from_json
 from agents.markdown_agent import save_markdown_book
-from agents.pdf_generator import generate_pdf_book
 
 load_dotenv()
+
+# Configure OpenTelemetry tracing for AI Toolkit integration
+from agent_framework.observability import configure_otel_providers
+configure_otel_providers(
+    vs_code_extension_port=4317,  # AI Toolkit gRPC port
+    enable_sensitive_data=True     # Capture prompts and completions for debugging
+)
 
 st.set_page_config(page_title="📚 LATAM Book Generator", layout="wide")
 st.title("📚 LATAM Book Generator with AI Illustrations")
@@ -79,8 +85,23 @@ with col_model2:
             ["singapore", "beijing", "us-virginia"],
             help="Select the DashScope region (API keys differ by region)"
         )
+        # Allow explicit selection of Qwen text and image models
+        qwen_text_model = st.selectbox(
+            "🧠 Qwen Text Model",
+            ["qwen-plus", "qwen-max", "qwen-flash", "qwen3-max"],
+            index=0,
+            help="Select the Qwen model to use for text/LLM generation"
+        )
+        qwen_image_model = st.selectbox(
+            "🖼️ Qwen Image Model",
+            ["qwen-image-plus", "qwen-image-max-2025-12-30", "qwen-image-max", "qwen-image"],
+            index=0,
+            help="Select the Qwen model to use for image generation"
+        )
     else:
         qwen_region = "singapore"
+        qwen_text_model = None
+        qwen_image_model = None
 
 # Validate API keys
 is_valid, message = validate_api_keys(use_qwen_models)
@@ -101,8 +122,10 @@ with col_img2:
             ["educational", "story", "artistic"],
             help="Educational: Clear & learning-focused | Story: Warm & narrative | Artistic: High-quality & detailed"
         )
+        images_per_chapter = st.slider("🖼️ Images / Chapter", 1, 5, 1)
     else:
         image_style = "educational"
+        images_per_chapter = 0
 
 async def generate_book_async(
     request: BookRequest,
@@ -110,7 +133,10 @@ async def generate_book_async(
     image_style: str,
     use_qwen_models: bool = False,
     qwen_region: str = "singapore",
-    images_dir: str = "./chapter_images"
+    images_dir: str = "./books/images",
+    text_model: str | None = None,
+    image_model: str | None = None,
+    images_per_chapter: int = 1,
 ) -> tuple:
     """
     Async book generation orchestration with optional image generation.
@@ -132,15 +158,15 @@ async def generate_book_async(
     use_qwen = use_qwen_models
     
     try:
-        # Step 2: Generate curriculum
-        curriculum_agent = await create_curriculum_agent(use_qwen=use_qwen_models)
+        # Step 2: Generate curriculum (use selected text model when provided)
+        curriculum_agent = await create_curriculum_agent(use_qwen=use_qwen_models, model_id=text_model)
         curriculum = await generate_curriculum(curriculum_agent, request)
         
         if not curriculum:
             raise ValueError("Failed to generate curriculum")
 
-        # Step 3: Generate all chapters
-        chapter_agent = await create_chapter_agent()
+        # Step 3: Generate all chapters (use selected text model when provided)
+        chapter_agent = await create_chapter_agent(use_qwen=use_qwen_models, model_id=text_model)
         context = {
             "age": request.target_audience_age,
             "country": request.country,
@@ -157,25 +183,38 @@ async def generate_book_async(
             chapter = await generate_chapter(chapter_agent, outline, context)
             
             if chapter:
-                # Generate one image per chapter as introduction
-                if generate_images:
+                # Generate N images per chapter as introduction
+                if generate_images and images_per_chapter and images_per_chapter > 0:
                     progress_placeholder.info(
                         f"📝 Chapter {i+1}/{len(curriculum.chapters)} - 🎨 Generating introduction image..."
                     )
-                    img = generate_chapter_image(
-                        title=chapter.chapter_title,
-                        summary=outline.summary,
-                        style=image_style,
-                        output_dir=images_dir,
-                        language=request.language
-                    )
-                    if img:
-                        # Embed image at the beginning of chapter markdown
-                        chapter.markdown_content = f"![{chapter.chapter_title}]({img.url})\n\n{chapter.markdown_content}"
-                        chapter.generated_images = [img]
-                        print(f"✅ Image embedded in chapter: {chapter.chapter_title}")
-                    else:
-                        print(f"⚠️ Failed to generate image for chapter: {chapter.chapter_title}")
+                    # Create clean chapter folder name
+                    chapter_folder = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in chapter.chapter_title)
+                    chapter_folder = chapter_folder.replace(' ', '_')[:50]
+                    chapter.generated_images = []
+                    image_markdown_lines = []
+                    for idx in range(images_per_chapter):
+                        # Ensure unique title per image to avoid filename collisions
+                        img_title = f"{chapter.chapter_title} - {idx+1}"
+                        img = generate_chapter_image(
+                            title=img_title,
+                            summary=outline.summary,
+                            style=image_style,
+                            output_dir=images_dir,
+                            chapter_name=chapter_folder,
+                            language=request.language,
+                            image_model=image_model
+                        )
+                        if img:
+                            image_markdown_lines.append(f"![{chapter.chapter_title} - {idx+1}]({img.url})")
+                            chapter.generated_images.append(img)
+                            print(f"✅ Image {idx+1} embedded in chapter: {chapter.chapter_title}")
+                        else:
+                            print(f"⚠️ Failed to generate image {idx+1} for chapter: {chapter.chapter_title}")
+
+                    if image_markdown_lines:
+                        imgs_md = "\n\n".join(image_markdown_lines) + "\n\n"
+                        chapter.markdown_content = f"{imgs_md}{chapter.markdown_content}"
                 
                 full_chapters.append(chapter)
             else:
@@ -221,12 +260,24 @@ if st.button("🚀 Generate Full Book"):
         print(f"  Language: {language}")
         print(f"{'='*60}\n")
         
-        # Create images directory
+        # Create images directory inside books/images/{timestamp}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        images_dir = f"chapter_images_{timestamp}"
-        
+        base_books_dir = Path("books")
+        images_dir_path = base_books_dir / "images" / timestamp
+        images_dir_path.mkdir(parents=True, exist_ok=True)
+
         curriculum, full_chapters = asyncio.run(
-            generate_book_async(request, generate_images, image_style, use_qwen_models, qwen_region, images_dir)
+            generate_book_async(
+                request,
+                generate_images,
+                image_style,
+                use_qwen_models,
+                qwen_region,
+                str(images_dir_path),
+                text_model=qwen_text_model,
+                image_model=qwen_image_model,
+                images_per_chapter=images_per_chapter,
+            )
         )
         
         if not curriculum or not full_chapters:
@@ -280,15 +331,22 @@ if st.button("🚀 Generate Full Book"):
             save_markdown_book(book_output, str(md_path))
             print(f"✅ Markdown saved: {md_path}")
 
-            # Generate PDF
+            # Generate PDF from HTML (optional - shows alternatives if unavailable)
             pdf_path = pdf_dir / f"libro_interactivo.pdf"
-            pdf_success = generate_pdf_book(request, curriculum, full_chapters, str(pdf_path))
-            if pdf_success:
-                print(f"✅ PDF saved: {pdf_path}")
-                st.info(f"📄 PDF generated: {pdf_path}")
-            else:
-                st.warning("⚠️ PDF generation failed - try installing fpdf2")
-                print(f"❌ PDF generation failed")
+            try:
+                # Lazy import to avoid loading weasyprint at module level
+                from agents.html_to_pdf_converter import convert_html_to_pdf
+                
+                pdf_success = convert_html_to_pdf(str(html_path), str(pdf_path))
+                if pdf_success:
+                    print(f"✅ PDF saved: {pdf_path}")
+                    st.success(f"📄 PDF generated successfully!")
+                else:
+                    print(f"⚠️ PDF generation skipped - HTML available")
+                    st.info(f"📱 PDF not available, but HTML is ready to open or print to PDF from browser")
+            except Exception as e:
+                print(f"⚠️  Error converting HTML to PDF: {e}")
+                pdf_success = False
 
             # Save to session state
             st.session_state.book_generated = True
