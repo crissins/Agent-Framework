@@ -16,10 +16,13 @@ from agents.chapter_agent import create_chapter_agent, generate_chapter
 from agents.qwen_image_agent import generate_image_with_qwen
 from config import validate_api_keys
 
-from agent_framework.observability import setup_observability
+from agent_framework.observability import configure_otel_providers
 
-# Enable observability for production monitoring
-setup_observability(enable_sensitive_data=False)
+# Configure OpenTelemetry tracing for AI Toolkit integration
+configure_otel_providers(
+    vs_code_extension_port=4317,  # AI Toolkit gRPC port
+    enable_sensitive_data=True     # Capture prompts and completions for debugging
+)
 
 load_dotenv()
 
@@ -90,13 +93,14 @@ async def main():
             
         print(f"✅ Chapter Generated: {chapter_content.chapter_title}")
 
-        # Step 4: Generate images using Qwen-Image-Max (demo)
+        # Step 4: Generate images using Qwen-Image-Plus (demo)
         if chapter_content.image_placeholders:
-            print("\n🎨 Step 4: Generating illustrations with Qwen-Image-Max...")
+            print("\n🎨 Step 4: Generating illustrations with Qwen-Image-Plus...")
             for i, placeholder_text in enumerate(chapter_content.image_placeholders[:2], 1):  # Demo: first 2 images
                 print(f"\n   Image {i}/2: {placeholder_text[:60]}...")
+                # ✅ Pass image placeholder text as the prompt for generation
                 img_result = await generate_image_with_qwen(
-                    prompt=placeholder_text,
+                    prompt=placeholder_text,  # Image description becomes the prompt
                     style="educational",
                     size="1664*928"
                 )

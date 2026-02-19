@@ -6,6 +6,9 @@ python-dotenv
 openai
 azure-identity
 
+# Observability & Tracing
+opentelemetry-exporter-otlp-proto-grpc
+
 # Image Generation
 dashscope
 
@@ -13,11 +16,13 @@ dashscope
 streamlit
 markdown
 
+# PDF Generation (HTML to PDF conversion)
+weasyprint
+
 # Utilities
 requests
 pydantic
 aiohttp
-fpdf2
 
 # Optional: Video & Search Support
 qrcode
