@@ -1,5 +1,43 @@
-books/
+```
+# Compiled Python files
+*.pyc
 __pycache__/
-agents/__pycache__/
-models/__pycache__/
+
+# Environment files
+.env
+.env.local
+*.env.*
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Dependencies
+.venv/
 venv/
+node_modules/
+
+# Build/dist directories
+dist/
+build/
+target/
+
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# Python cache
+.mypy_cache/
+.pytest_cache/
+
+# System files
+.DS_Store
+Thumbs.db
+```
