@@ -117,15 +117,41 @@ with col_img1:
     generate_images = st.checkbox("🎨 Generate AI Illustrations (Qwen-Image-Max)", value=True)
 with col_img2:
     if generate_images:
-        image_style = st.selectbox(
-            "🖼️ Illustration Style",
-            ["educational", "story", "artistic"],
-            help="Educational: Clear & learning-focused | Story: Warm & narrative | Artistic: High-quality & detailed"
-        )
-        images_per_chapter = st.slider("🖼️ Images / Chapter", 1, 5, 1)
+        # Advanced Image Settings Expander
+        with st.expander("🎨 Advanced Image Settings", expanded=True):
+            col_style1, col_style2 = st.columns(2)
+            with col_style1:
+                image_style = st.selectbox(
+                    "🖼️ Illustration Style",
+                    [
+                        "educational", "story", "artistic", "3D", "watercolor", 
+                        "surrealism", "realistic", "3D cartoon", "ink painting", 
+                        "post-apocalyptic", "pointillism", "clay", "ceramic", 
+                        "origami", "gongbi", "chinese ink"
+                    ],
+                    index=0,
+                    help="Select the artistic style for the illustrations"
+                )
+            with col_style2:
+                images_per_chapter = st.slider("🖼️ Images / Chapter", 1, 5, 1)
+            
+            st.caption("📸 Camera & Lighting (Optional)")
+            col_cam1, col_cam2, col_cam3, col_cam4 = st.columns(4)
+            with col_cam1:
+                shot_size = st.selectbox("📏 Shot Size", ["", "Long Shot", "Medium Shot", "Close Up", "Extreme Close Up"], index=0)
+            with col_cam2:
+                perspective = st.selectbox("👁️ Perspective", ["", "Eye Level", "Low Angle", "High Angle", "Bird's Eye View", "Worm's Eye View"], index=0)
+            with col_cam3:
+                lens_type = st.selectbox("🔍 Lens", ["", "Wide Angle", "Telephoto", "Macro", "Fisheye"], index=0)
+            with col_cam4:
+                lighting = st.selectbox("💡 Lighting", ["", "Natural", "Cinematic", "Studio", "Golden Hour", "Blue Hour", "Dramatic", "Soft"], index=0)
     else:
         image_style = "educational"
         images_per_chapter = 0
+        shot_size = ""
+        perspective = ""
+        lens_type = ""
+        lighting = ""
 
 async def generate_book_async(
     request: BookRequest,
@@ -137,6 +163,10 @@ async def generate_book_async(
     text_model: str | None = None,
     image_model: str | None = None,
     images_per_chapter: int = 1,
+    shot_size: str = "",
+    perspective: str = "",
+    lens_type: str = "",
+    lighting: str = ""
 ) -> tuple:
     """
     Async book generation orchestration with optional image generation.
@@ -148,6 +178,10 @@ async def generate_book_async(
         use_qwen_models: If True, use Qwen models; if False, use GitHub Models
         qwen_region: Region for Qwen models ('singapore', 'beijing', 'us-virginia')
         images_dir: Directory to save generated images
+        shot_size: Camera shot size
+        perspective: Camera perspective
+        lens_type: Camera lens type
+        lighting: Scene lighting
     
     Best practices:
     - Clean error handling
@@ -203,7 +237,11 @@ async def generate_book_async(
                             output_dir=images_dir,
                             chapter_name=chapter_folder,
                             language=request.language,
-                            image_model=image_model
+                            image_model=image_model,
+                            shot_size=shot_size,
+                            perspective=perspective,
+                            lens_type=lens_type,
+                            lighting=lighting
                         )
                         if img:
                             image_markdown_lines.append(f"![{chapter.chapter_title} - {idx+1}]({img.url})")
@@ -277,6 +315,10 @@ if st.button("🚀 Generate Full Book"):
                 text_model=qwen_text_model,
                 image_model=qwen_image_model,
                 images_per_chapter=images_per_chapter,
+                shot_size=shot_size,
+                perspective=perspective,
+                lens_type=lens_type,
+                lighting=lighting
             )
         )
         

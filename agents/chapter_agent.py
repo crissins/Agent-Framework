@@ -56,6 +56,14 @@ async def create_chapter_agent(use_qwen: bool = False, model_id: str | None = No
     return agent
 
 
+from utils.retry import async_retry
+
+@async_retry(max_retries=3, base_delay=2.0, max_delay=60.0)
+async def _run_agent_with_retry(agent: RawAgent, prompt: str, options: dict):
+    """Helper to run agent with retry logic"""
+    return await agent.run(prompt, options=options)
+
+
 async def generate_chapter(
     agent: RawAgent,
     outline: ChapterOutline,
@@ -101,8 +109,10 @@ async def generate_chapter(
         print(f"Max Tokens: 4000")
         print(f"{'='*80}\n")
         
-        response = await agent.run(
-            prompt,
+        # Use the retrying helper
+        response = await _run_agent_with_retry(
+            agent, 
+            prompt, 
             options={"max_tokens": 4000}
         )
         
