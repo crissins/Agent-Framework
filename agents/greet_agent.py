@@ -1,9 +1,14 @@
 import os
+import logging
 from typing import Optional
 from agent_framework import RawAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest
 from config import get_model_config
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def create_greet_agent(use_qwen: bool = False) -> RawAgent:
@@ -56,7 +61,7 @@ async def get_book_request(agent: RawAgent) -> Optional[BookRequest]:
         response = await agent.run(mock_query, options={"response_format": BookRequest})
         return response.value
     except Exception as e:
-        print(f"Error parsing book request: {e}")
+        logger.error(f"Error parsing book request: {e}")
         # Fallback to default request
         return BookRequest(
             topic="Computer Science and AI",
