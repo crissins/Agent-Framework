@@ -23,10 +23,11 @@ from models.book_spec import ImagePlaceholder
 
 # Shared negative prompt — prevents any text/typography from appearing in images
 _NO_TEXT_NEGATIVE_PROMPT = (
-    "low quality, blurry, deformed, distorted, "
-    "text, words, letters, numbers, captions, labels, titles, subtitles, "
-    "watermark, typography, fonts, writing, inscriptions, signs with text, "
-    "speech bubbles, dialogue, annotations, printed text, handwriting"
+    "text, words, letters, numbers, chinese characters, hanzi, english text, spanish text, "
+    "captions, labels, titles, subtitles, watermark, typography, fonts, writing, "
+    "inscriptions, signs, speech bubbles, dialogue, annotations, printed text, handwriting, "
+    "signature, logo, brand name, watermark, blur, low quality, deformed, distorted, "
+    "unnatural anatomy, disfigured, bad art, ugly, pixelated, grain, glitch"
 )
 
 
@@ -75,6 +76,31 @@ async def generate_image_with_qwen(
         lens_type,
         lighting
     )
+
+
+from utils.retry import sync_retry
+
+@sync_retry(max_retries=3, base_delay=5.0, max_delay=60.0)
+def _call_dashscope_api(api_key, image_model, enhanced_prompt, size):
+    """
+    Helper to call DashScope API with retry logic.
+    Raises exception on non-200 status to trigger retry.
+    """
+    response = ImageSynthesis.call(
+        api_key=api_key,
+        model=image_model,
+        prompt=enhanced_prompt,
+        negative_prompt=_NO_TEXT_NEGATIVE_PROMPT,
+        n=1,
+        size=size,
+        prompt_extend=False,
+        watermark=False
+    )
+    
+    if response.status_code != HTTPStatus.OK:
+        raise Exception(f"Image generation failed: {response.code} - {response.message}")
+        
+    return response
 
 
 def _generate_image_sync(
@@ -132,20 +158,8 @@ def _generate_image_sync(
         print(f"{'='*80}")
         print(f"Prompt: {enhanced_prompt[:120]}...")
 
-        response = ImageSynthesis.call(
-            api_key=api_key,
-            model=image_model,
-            prompt=enhanced_prompt,
-            negative_prompt=_NO_TEXT_NEGATIVE_PROMPT,
-            n=1,
-            size=size,
-            prompt_extend=False,
-            watermark=False
-        )
-
-        if response.status_code != HTTPStatus.OK:
-            print(f"❌ Image generation failed: {response.code} - {response.message}")
-            return None
+        # Use retry helper
+        response = _call_dashscope_api(api_key, image_model, enhanced_prompt, size)
 
         # Extract image URL
         if response.output.results and len(response.output.results) > 0:
@@ -228,32 +242,38 @@ def generate_chapter_image(
     chapter_dir = Path(output_dir) / chapter_name
     chapter_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create descriptive prompt for chapter image
-    prompt = _create_chapter_prompt(title, summary, style, language)
+    # Use a simpler prompt structure "Title: Summary" to avoid nested formatting issues
+    raw_prompt = f"{title}: {summary}"
 
     try:
         print(f"\n{'='*80}")
         print(f"🎨 Generating chapter image: {title}")
         print(f"{'='*80}")
-        print(f"Prompt: {prompt[:100]}...")
+        print(f"Raw Input: {raw_prompt[:100]}...")
 
         # Enhance the prompt with optional elements from the prompt dictionary
-        enhanced_prompt = _enhance_prompt_with_style(prompt, style, shot_size, perspective, lens_type, lighting)
-
-        response = ImageSynthesis.call(
-            api_key=api_key,
-            model=image_model,
-            prompt=enhanced_prompt,
-            negative_prompt=_NO_TEXT_NEGATIVE_PROMPT,
-            n=1,
-            size=size,
-            prompt_extend=False,
-            watermark=False
+        # Pass language parameter if supported
+        enhanced_prompt = _enhance_prompt_with_style(
+            raw_prompt, 
+            style, 
+            shot_size, 
+            perspective, 
+            lens_type, 
+            lighting,
+            language=language
         )
+        
+        print(f"Enhanced Prompt (Parameter Check):\n"
+              f"  Style: {style}\n"
+              f"  Shot: {shot_size}\n"
+              f"  Perspective: {perspective}\n"
+              f"  Lens: {lens_type}\n"
+              f"  Lighting: {lighting}\n"
+              f"  Language Context: {language}\n"
+              f"Full Prompt Preview: {enhanced_prompt[:200]}...")
 
-        if response.status_code != HTTPStatus.OK:
-            print(f"❌ Image generation failed: {response.code} - {response.message}")
-            return None
+        # Use retry helper
+        response = _call_dashscope_api(api_key, image_model, enhanced_prompt, size)
 
         # Extract image URL
         if response.output.results and len(response.output.results) > 0:
@@ -284,7 +304,15 @@ def generate_chapter_image(
         return None
 
 
-def _enhance_prompt_with_style(prompt: str, style: str, shot_size: str = "", perspective: str = "", lens_type: str = "", lighting: str = "") -> str:
+def _enhance_prompt_with_style(
+    prompt: str, 
+    style: str, 
+    shot_size: str = "", 
+    perspective: str = "", 
+    lens_type: str = "", 
+    lighting: str = "",
+    language: str = "English"
+) -> str:
     """
     Add style guidance to a prompt. Explicitly instructs the model to
     produce pure illustration content with no text or typography of any kind.
@@ -292,12 +320,13 @@ def _enhance_prompt_with_style(prompt: str, style: str, shot_size: str = "", per
     perspective, lens type, style, and lighting when provided.
 
     Args:
-        prompt: Original image prompt/description
+        prompt: Original image prompt/description (Format "Entity: Environment" or plain text)
         style: Visual style ("educational", "story", "artistic")
         shot_size: Shot size description (optional)
         perspective: Perspective description (optional)
         lens_type: Lens type description (optional)
         lighting: Lighting description (optional)
+        language: Language of the audience (optional context)
 
     Returns:
         Enhanced prompt with style guidance and prompt dictionary elements
@@ -392,6 +421,7 @@ def _enhance_prompt_with_style(prompt: str, style: str, shot_size: str = "", per
     # + Camera language + Atmosphere + Detail modifiers
     
     # Parse the prompt into entity and environment components
+    # Handle both formatted "Title: Summary" prompts and simple prompts
     if ":" in prompt:
         parts = prompt.split(":", 1)
         entity = parts[0].strip()
@@ -399,6 +429,9 @@ def _enhance_prompt_with_style(prompt: str, style: str, shot_size: str = "", per
     else:
         entity = "Main subject"
         environment = prompt
+    
+    # Restrict environment length directly here to avoid issues
+    environment = environment[:400]
     
     # Determine camera language based on provided parameters
     camera_elements = []
@@ -409,21 +442,26 @@ def _enhance_prompt_with_style(prompt: str, style: str, shot_size: str = "", per
     if lens_type:
         camera_elements.append(lens_type)
     
-    camera_language = ", ".join(camera_elements) if camera_elements else "medium shot, centered composition, clear focal point"
+    if camera_elements:
+        camera_language = ", ".join(camera_elements)
+    else:
+        camera_language = "medium shot, centered composition, clear focal point"
     
     # Determine lighting
     lighting_element = lighting if lighting else "natural lighting as appropriate"
     
     # Construct the enhanced prompt using advanced formula
+    # Placed style and camera instructions clearly
     enhanced_prompt = (
-        f"{style_desc}\n"
-        f"Entity: {entity}.\n"
-        f"Environment: {environment}.\n"
-        f"Style: {style}.\n"
-        f"Camera: {camera_language}.\n"
+        f"NO TEXT. NO TYPOGRAPHY. VISUAL DEPICTION ONLY.\n"
+        f"Style: {style} - {style_desc}\n"
+        f"Subject: {entity}.\n"
+        f"Setting: {environment}.\n"
+        f"Camera View: {camera_language}.\n"
         f"Lighting: {lighting_element}.\n"
+        f"Audience Context: Create imagery appropriate for {language}-speaking cultures, but DO NOT include any text.\n"
         f"Atmosphere: Professional quality, visually appealing, appropriate for target audience.\n"
-        f"Details: High resolution, fine detail, clean composition, no text or typography anywhere in the image."
+        f"Details: High resolution, fine detail, clean composition, absolute ban on text, letters, or numbers in the image."
     )
     
     return enhanced_prompt
@@ -461,121 +499,3 @@ def _download_and_save_image(url: str, title: str, output_dir: str) -> Optional[
     except Exception as e:
         print(f"⚠️ Error downloading image: {e}")
         return None
-
-
-def _create_chapter_prompt(title: str, summary: str, style: str, language: str = "English") -> str:
-    """
-    Create a detailed prompt for chapter image generation.
-    Explicitly instructs the model not to render any text or typography.
-
-    Args:
-        title: Chapter title
-        summary: Chapter summary
-        style: Visual style
-        language: Language for the prompt
-
-    Returns:
-        Formatted prompt for image generation
-    """
-    style_guides = {
-        "educational": (
-            "Educational illustration style, bright colors, clear and engaging, "
-            "suitable for children's learning materials, friendly characters, simple clean design. "
-            "Pure illustration only — no text, labels, captions, or written words anywhere in the image."
-        ),
-        "story": (
-            "Storybook illustration style, warm and inviting, narrative-driven, "
-            "rich colors, expressive characters, whimsical atmosphere. "
-            "Pure illustration only — no text, labels, captions, or written words anywhere in the image."
-        ),
-        "artistic": (
-            "High-quality artistic illustration, detailed, textured, professional artwork "
-            "with beautiful composition and fine details. "
-            "Pure illustration only — no text, labels, captions, or written words anywhere in the image."
-        ),
-        "ink painting": (
-            "Ink painting, white space composition, Wu Guanzhong-inspired aesthetic, delicate brushstrokes, "
-            "texture of rice paper, minimal color, expressive lines and artistic conception. "
-            "Aim for traditional Chinese ink painting feel — no modern typography or printed text."
-        ),
-        "3D cartoon": (
-            "3D cartoon style with smooth surfaces, vibrant colors, and animated character design. "
-            "Professional animation quality with attention to form and depth. "
-            "No text or typography anywhere in the image."
-        ),
-        "post-apocalyptic": (
-            "Post-apocalyptic art style, gritty and atmospheric, depicting scenes of decay and abandonment. "
-            "Muted colors, rough textures, and dystopian themes. "
-            "Pure illustration only — no text, labels, captions, or written words anywhere in the image."
-        ),
-        "pointillism": (
-            "Pointillism style using small dots of color to form the image, inspired by artists like Seurat. "
-            "Color theory applied through juxtaposed dots, creating luminosity and vibrant color effects. "
-            "No text or typography in the image."
-        ),
-        "surrealism": (
-            "Surrealist art style with dreamlike, fantastical imagery, unexpected juxtapositions, and illogical scenes. "
-            "Imaginative and abstract compositions with symbolic elements. "
-            "No text or typography in the image."
-        ),
-        "watercolor": (
-            "Watercolor painting style with translucent washes of color, soft edges, and flowing paint effects. "
-            "Paper texture and natural flow of pigments create organic look. "
-            "No text or typography in the image."
-        ),
-        "clay": (
-            "Claymation or clay modeling style with sculptural forms, matte textures, and three-dimensional appearance. "
-            "Soft, malleable look with subtle color variations and tactile surfaces. "
-            "No text or typography in the image."
-        ),
-        "realistic": (
-            "Hyper-realistic style with photographic accuracy, detailed textures, and true-to-life representation. "
-            "Attention to light, shadow, and minute details for lifelike appearance. "
-            "No text or typography in the image."
-        ),
-        "ceramic": (
-            "Ceramic or pottery style with glossy finish, smooth textures, and characteristic ceramic appearance. "
-            "Attention to glaze effects, reflections, and typical ceramic properties. "
-            "No text or typography in the image."
-        ),
-        "3D": (
-            "3D rendering style with computer-generated graphics, realistic lighting, and dimensional depth. "
-            "Clean surfaces, accurate shadows, and professional CG quality. "
-            "No text or typography in the image."
-        ),
-        "origami": (
-            "Origami style with folded paper appearance, geometric shapes, and crisp edges. "
-            "Papercraft aesthetic with attention to folding patterns and paper texture. "
-            "No text or typography in the image."
-        ),
-        "gongbi": (
-            "Gongbi style traditional Chinese painting with meticulous brushwork, fine detail, and delicate coloring. "
-            "Rich cultural heritage with refined techniques and elegant subjects. "
-            "No text or typography in the image."
-        ),
-        "chinese ink": (
-            "Chinese ink painting style with brush strokes, ink wash techniques, and traditional aesthetics. "
-            "Emphasis on brushwork, ink tones, and philosophical expression. "
-            "No text or typography in the image."
-        ),
-    }
-
-    style_desc = style_guides.get(style, style_guides["educational"])
-
-    # Advanced prompt composition: Entity + Environment + Style + Camera language + Atmosphere + Detail modifiers
-    entity = title
-    environment = summary[:240] if summary else "a simple illustrative scene"
-    
-    prompt = (
-        f"{style_desc}\n"
-        f"Entity: {entity}.\n"
-        f"Environment: {environment}.\n"
-        f"Style notes: Follow the {style} style guidance above.\n"
-        f"Create a visually engaging chapter introduction image that represents the main topic. "
-        f"Include relevant educational elements and make it age-appropriate for the target audience. "
-        f"The image must contain absolutely no text, words, numbers, or written characters of any kind — "
-        f"convey all meaning through visual imagery alone.\n"
-        f"[Generate this image in a way that would be appropriate for a {language}-speaking audience.]"
-    )
-
-    return prompt
