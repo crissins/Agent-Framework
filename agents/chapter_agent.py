@@ -1,11 +1,16 @@
 # agents/chapter_agent.py
 import re
 import os
+import logging
 from typing import Optional, Dict, Any
 from agent_framework import RawAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import ChapterOutline, ChapterContent
 from config import get_model_config
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def create_chapter_agent(use_qwen: bool = False, model_id: str | None = None) -> RawAgent:
@@ -99,15 +104,12 @@ async def generate_chapter(
     
     try:
         # Log input
-        print(f"\n{'='*80}")
-        print(f"🎯 LLM INPUT - CHAPTER AGENT")
-        print(f"{'='*80}")
-        print(f"Chapter: {outline.title}")
-        print(f"Summary: {outline.summary}")
-        print(f"Context: Age={context['age']}, Country={context['country']}, Method={context['learning_method']}, Language={context['language']}")
-        print(f"Prompt:\n{prompt}\n")
-        print(f"Max Tokens: 4000")
-        print(f"{'='*80}\n")
+        logger.info(f"🎯 LLM INPUT - CHAPTER AGENT")
+        logger.info(f"Chapter: {outline.title}")
+        logger.info(f"Summary: {outline.summary}")
+        logger.info(f"Context: Age={context['age']}, Country={context['country']}, Method={context['learning_method']}, Language={context['language']}")
+        logger.info(f"Prompt:\n{prompt}\n")
+        logger.info(f"Max Tokens: 4000")
         
         # Use the retrying helper
         response = await _run_agent_with_retry(
@@ -120,16 +122,13 @@ async def generate_chapter(
         image_placeholders = _extract_image_placeholders(response.text)
         
         # Log output
-        print(f"\n{'='*80}")
-        print(f"✅ LLM OUTPUT - CHAPTER AGENT")
-        print(f"{'='*80}")
-        print(f"Chapter: {outline.title}")
-        print(f"Content Length: {len(response.text)} characters")
-        print(f"Image Placeholders Found: {len(image_placeholders)}")
+        logger.info(f"✅ LLM OUTPUT - CHAPTER AGENT")
+        logger.info(f"Chapter: {outline.title}")
+        logger.info(f"Content Length: {len(response.text)} characters")
+        logger.info(f"Image Placeholders Found: {len(image_placeholders)}")
         for i, placeholder in enumerate(image_placeholders, 1):
-            print(f"  {i}. {placeholder[:60]}...")
-        print(f"Response Preview (first 200 chars):\n{response.text[:200]}...\n")
-        print(f"{'='*80}\n")
+            logger.info(f"  {i}. {placeholder[:60]}...")
+        logger.info(f"Response Preview (first 200 chars):\n{response.text[:200]}...\n")
         
         return ChapterContent(
             chapter_title=outline.title,
@@ -137,9 +136,9 @@ async def generate_chapter(
             image_placeholders=image_placeholders
         )
     except Exception as e:
-        print(f"\n❌ Error generating chapter '{outline.title}': {e}\n")
+        logger.error(f"❌ Error generating chapter '{outline.title}': {e}")
         import traceback
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
         return None
 
 

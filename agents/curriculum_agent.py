@@ -1,9 +1,14 @@
 import os
+import logging
 from typing import Optional
 from agent_framework import RawAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest, Curriculum
 from config import get_model_config
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def create_curriculum_agent(use_qwen: bool = False, model_id: str | None = None) -> RawAgent:
@@ -83,13 +88,10 @@ async def generate_curriculum(agent: RawAgent, request: BookRequest) -> Optional
     
     try:
         # Log input
-        print(f"\n{'='*80}")
-        print(f"🎯 LLM INPUT - CURRICULUM AGENT")
-        print(f"{'='*80}")
-        print(f"Prompt:\n{prompt}\n")
-        print(f"Response Format: Curriculum (JSON)")
-        print(f"Max Tokens: 2000")
-        print(f"{'='*80}\n")
+        logger.info(f"🎯 LLM INPUT - CURRICULUM AGENT")
+        logger.info(f"Prompt:\n{prompt}\n")
+        logger.info(f"Response Format: Curriculum (JSON)")
+        logger.info(f"Max Tokens: 2000")
         
         # Use the retrying helper
         response = await _run_agent_with_retry(
@@ -99,20 +101,17 @@ async def generate_curriculum(agent: RawAgent, request: BookRequest) -> Optional
         )
         
         # Log output
-        print(f"\n{'='*80}")
-        print(f"✅ LLM OUTPUT - CURRICULUM AGENT")
-        print(f"{'='*80}")
-        print(f"Curriculum Generated:")
-        print(f"  Title: {response.value.title}")
-        print(f"  Description: {response.value.description}")
-        print(f"  Chapters: {len(response.value.chapters)}")
+        logger.info(f"✅ LLM OUTPUT - CURRICULUM AGENT")
+        logger.info(f"Curriculum Generated:")
+        logger.info(f"  Title: {response.value.title}")
+        logger.info(f"  Description: {response.value.description}")
+        logger.info(f"  Chapters: {len(response.value.chapters)}")
         for i, ch in enumerate(response.value.chapters, 1):
-            print(f"    {i}. {ch.title}")
-        print(f"{'='*80}\n")
+            logger.info(f"    {i}. {ch.title}")
         
         return response.value
     except Exception as e:
-        print(f"\n❌ Error generating curriculum: {e}\n")
+        logger.error(f"❌ Error generating curriculum: {e}")
         import traceback
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
         return None

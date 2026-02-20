@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Main orchestration for book generation workflow.
 Demonstrates Microsoft Agent Framework best practices:
@@ -8,6 +9,7 @@ Demonstrates Microsoft Agent Framework best practices:
 """
 import asyncio
 import os
+import sys
 from dotenv import load_dotenv
 
 from agents.greet_agent import create_greet_agent, get_book_request
@@ -16,13 +18,15 @@ from agents.chapter_agent import create_chapter_agent, generate_chapter
 from agents.qwen_image_agent import generate_image_with_qwen
 from config import validate_api_keys
 
-from agent_framework.observability import configure_otel_providers
-
 # Configure OpenTelemetry tracing for AI Toolkit integration
-configure_otel_providers(
-    vs_code_extension_port=4317,  # AI Toolkit gRPC port
-    enable_sensitive_data=True     # Capture prompts and completions for debugging
-)
+try:
+    from agent_framework.observability import configure_otel_providers
+    configure_otel_providers(
+        vs_code_extension_port=4317,  # AI Toolkit gRPC port
+        enable_sensitive_data=True     # Capture prompts and completions for debugging
+    )
+except ImportError:
+    print("Warning: agent_framework not found. Tracing will be disabled.", file=sys.stderr)
 
 load_dotenv()
 

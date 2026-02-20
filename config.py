@@ -53,6 +53,20 @@ class ModelConfig:
     }
 
 
+def load_env_vars():
+    """
+    Load environment variables from .env file if it exists.
+    """
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as file:
+            for line in file:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    os.environ[key] = value
+
+
 def get_model_config(use_qwen: bool = False, qwen_region: str = "singapore") -> dict:
     """
     Get model configuration based on provider selection.
@@ -64,6 +78,9 @@ def get_model_config(use_qwen: bool = False, qwen_region: str = "singapore") -> 
     Returns:
         Configuration dictionary with api_key_env, base_url, model_id, and description
     """
+    # Load environment variables
+    load_env_vars()
+    
     if use_qwen:
         if qwen_region == "beijing":
             return ModelConfig.QWEN_CONFIG_BEIJING
