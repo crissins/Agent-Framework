@@ -15,11 +15,16 @@ Documentation: https://www.alibabacloud.com/help/en/model-studio/qwen-image
 import os
 import asyncio
 import requests
+import logging
 from typing import Optional
 from http import HTTPStatus
 from pathlib import Path
 from dashscope import ImageSynthesis
 from models.book_spec import ImagePlaceholder
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Shared negative prompt — prevents any text/typography from appearing in images
 _NO_TEXT_NEGATIVE_PROMPT = (
@@ -153,10 +158,8 @@ def _generate_image_sync(
     enhanced_prompt = _enhance_prompt_with_style(prompt, style, shot_size, perspective, lens_type, lighting)
 
     try:
-        print(f"\n{'='*80}")
-        print(f"🎨 Generating image from prompt")
-        print(f"{'='*80}")
-        print(f"Prompt: {enhanced_prompt[:120]}...")
+        logger.info(f"🎨 Generating image from prompt")
+        logger.info(f"Prompt: {enhanced_prompt[:120]}...")
 
         # Use retry helper
         response = _call_dashscope_api(api_key, image_model, enhanced_prompt, size)
@@ -164,29 +167,29 @@ def _generate_image_sync(
         # Extract image URL
         if response.output.results and len(response.output.results) > 0:
             image_url = response.output.results[0].url
-            print(f"✅ Image generated successfully: {image_url[:80]}...")
+            logger.info(f"✅ Image generated successfully: {image_url[:80]}...")
 
             # Download and save image
             local_path = _download_and_save_image(image_url, prompt, str(chapter_dir))
 
             if local_path:
-                print(f"💾 Image saved: {local_path}\n")
+                logger.info(f"💾 Image saved: {local_path}\n")
                 return ImagePlaceholder(
                     description=prompt[:100],
                     url=local_path  # Return local path
                 )
             else:
-                print(f"⚠️ Failed to save image locally, using URL instead")
+                logger.warning(f"⚠️ Failed to save image locally, using URL instead")
                 return ImagePlaceholder(
                     description=prompt[:100],
                     url=image_url
                 )
         else:
-            print("❌ No image results returned")
+            logger.error("❌ No image results returned")
             return None
 
     except Exception as e:
-        print(f"❌ Error generating image: {e}\n")
+        logger.error(f"❌ Error generating image: {e}\n")
         return None
 
 
@@ -231,7 +234,7 @@ def generate_chapter_image(
 
     api_key = os.getenv("DASHSCOPE_API_KEY")
     if not api_key:
-        print("⚠️  Warning: DASHSCOPE_API_KEY environment variable not set")
+        logger.warning("⚠️  Warning: DASHSCOPE_API_KEY environment variable not set")
         return None
 
     # Configure DashScope API endpoint

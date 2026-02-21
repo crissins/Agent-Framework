@@ -1,4 +1,4 @@
-# app.py
+#!/usr/bin/env python3
 """
 Streamlit application for LATAM book generation.
 Integrates Microsoft Agent Framework with best practices:
@@ -10,6 +10,7 @@ Integrates Microsoft Agent Framework with best practices:
 import asyncio
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 import streamlit as st
@@ -24,14 +25,18 @@ from agents.qwen_image_agent import generate_chapter_image
 from agents.html_css_agent import generate_html_css_book_from_json
 from agents.markdown_agent import save_markdown_book
 
+# Load environment variables
 load_dotenv()
 
 # Configure OpenTelemetry tracing for AI Toolkit integration
-from agent_framework.observability import configure_otel_providers
-configure_otel_providers(
-    vs_code_extension_port=4317,  # AI Toolkit gRPC port
-    enable_sensitive_data=True     # Capture prompts and completions for debugging
-)
+try:
+    from agent_framework.observability import configure_otel_providers
+    configure_otel_providers(
+        vs_code_extension_port=4317,  # AI Toolkit gRPC port
+        enable_sensitive_data=True     # Capture prompts and completions for debugging
+    )
+except ImportError:
+    print("Warning: agent_framework not found. Tracing will be disabled.", file=sys.stderr)
 
 st.set_page_config(page_title="📚 LATAM Book Generator", layout="wide")
 st.title("📚 LATAM Book Generator with AI Illustrations")
