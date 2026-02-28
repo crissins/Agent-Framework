@@ -37,9 +37,11 @@ for _otlp_logger_name in (
 try:
     from agent_framework.observability import configure_otel_providers
 
+    # enable_sensitive_data captures prompts/completions – ON in dev, OFF in prod
+    _enable_sensitive = os.getenv("ENABLE_SENSITIVE_DATA", "false").lower() in ("1", "true", "yes")
     configure_otel_providers(
         vs_code_extension_port=4317,  # AI Toolkit gRPC port
-        enable_sensitive_data=True,  # Capture prompts and completions for debugging
+        enable_sensitive_data=_enable_sensitive,
     )
 except Exception:
     print(
