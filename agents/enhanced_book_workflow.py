@@ -4,11 +4,8 @@ Combines the book generation pipeline with real-time fact verification using web
 """
 import asyncio
 from typing import Optional, List
-from agents.workflow_book_generator import (
-    create_book_chapter_agent,
-    generate_chapter,
-    save_chapter_to_file
-)
+from agents.chapter_agent import create_chapter_agent as create_book_chapter_agent
+from agents.chapter_agent import generate_chapter
 from agents.fact_check_agent import create_fact_check_agent, verify_chapter_accuracy
 import json
 from datetime import datetime

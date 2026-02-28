@@ -5,14 +5,14 @@ Uses DashScope OpenAI-compatible API with enable_search parameter.
 """
 import os
 from typing import Optional
-from agent_framework import RawAgent
+from agent_framework import ChatAgent
 from agent_framework.openai import OpenAIChatClient
 from config import get_model_config
 
 import asyncio
 
 
-async def create_fact_check_agent(use_qwen: bool = True) -> RawAgent:
+async def create_fact_check_agent(use_qwen: bool = True) -> ChatAgent:
     """
     Create a fact-checking agent using Qwen with web search capabilities.
     
@@ -46,26 +46,43 @@ async def create_fact_check_agent(use_qwen: bool = True) -> RawAgent:
     agent = client.as_agent(
         name="FactCheckAgent",
         instructions=(
-            "You are an expert fact-checker for educational content. Your role is to verify the accuracy "
-            "of claims, statistics, dates, and other factual information in educational materials. "
-            "You have access to real-time web search to verify information. "
-            "\n\nYour responsibilities:\n"
-            "1. Search the web for relevant, authoritative sources\n"
-            "2. Compare the provided content against current information\n"
-            "3. Identify any inaccuracies, outdated information, or missing context\n"
-            "4. Provide citations and sources for verified information\n"
-            "5. Rate confidence level (High/Medium/Low) for each verification\n"
-            "6. Suggest corrections or improvements where needed\n"
-            "\nAlways prioritize recent, authoritative sources (academic institutions, government "
-            "official websites, peer-reviewed journals, established news organizations). "
-            "Be transparent about limitations and uncertainties in information."
+            "### CONTEXT ###\n"
+            "You are a senior fact-checker and research analyst with expertise in educational "
+            "content verification. You have access to real-time web search to verify information "
+            "against current, authoritative sources. Your work ensures that educational materials "
+            "are accurate, up-to-date, and trustworthy for young learners.\n\n"
+            "### OBJECTIVE ###\n"
+            "Verify the accuracy of claims, statistics, dates, scientific facts, and other "
+            "factual information in educational materials. Provide evidence-based assessments "
+            "with clear sourcing.\n\n"
+            "### TASK STEPS ###\n"
+            "For each piece of content you receive:\n"
+            "1. Identify all discrete factual claims that can be independently verified\n"
+            "2. Search the web for relevant, authoritative sources for each claim\n"
+            "3. Compare the provided content against current, verified information\n"
+            "4. Classify each claim as: Accurate / Partially Accurate / Outdated / Inaccurate\n"
+            "5. Rate your confidence level (High / Medium / Low) based on source quality\n"
+            "6. Provide specific citations and source URLs for verified information\n"
+            "7. Suggest concrete corrections or improvements where needed\n\n"
+            "### SOURCE PRIORITY (highest to lowest) ###\n"
+            "1. Peer-reviewed academic journals and research papers\n"
+            "2. Government and international organization official data (WHO, UNESCO, NASA, etc.)\n"
+            "3. Established educational institutions (.edu domains)\n"
+            "4. Reputable encyclopedias and reference works\n"
+            "5. Established news organizations with editorial standards\n\n"
+            "### CONSTRAINTS ###\n"
+            "- Always prioritize recency \u2014 flag any information older than 3 years\n"
+            "- Be transparent about limitations and uncertainties\n"
+            "- Distinguish between facts, approximations, and commonly cited but debated claims\n"
+            "- When sources conflict, note the disagreement and cite both sides\n"
+            "- Never state a claim is verified without providing at least one authoritative source"
         ),
     )
     return agent
 
 
 async def fact_check_content(
-    agent: RawAgent,
+    agent: ChatAgent,
     content: str,
     topic: Optional[str] = None,
     context: Optional[str] = None
@@ -92,41 +109,51 @@ async def fact_check_content(
     """
     try:
         # Build comprehensive fact-check prompt
-        prompt = f"""Please fact-check the following educational content:
+        prompt = f"""=== FACT-CHECK REQUEST ===
 
-CONTENT TO VERIFY:
+### CONTENT TO VERIFY ###
 {content}
 
 """
         if topic:
-            prompt += f"SUBJECT/TOPIC: {topic}\n"
+            prompt += f"### SUBJECT/TOPIC ###\n{topic}\n\n"
         if context:
-            prompt += f"CONTEXT: {context}\n"
+            prompt += f"### ADDITIONAL CONTEXT ###\n{context}\n\n"
         
-        prompt += """
+        prompt += """### TASK STEPS ###
+1. Read the content carefully and identify every discrete factual claim
+   (statistics, dates, names, locations, scientific facts, measurements)
+2. Search the web for current, authoritative information about each claim
+3. For each claim, produce a structured assessment:
 
-FACT-CHECK INSTRUCTIONS:
-1. Identify all factual claims that can be verified (statistics, dates, names, locations, scientific facts)
-2. Search the web for current information about each claim
-3. For each claim, provide:
-   - CLAIM: [The specific statement being checked]
-   - STATUS: [Accurate/Outdated/Partially Accurate/Inaccurate]
-   - CONFIDENCE: [High/Medium/Low]
-   - EVIDENCE: [What the web search found]
-   - SOURCES: [URLs or source names]
-   - NOTES: [Any additional context or corrections needed]
+   === CLAIM: [The exact statement being checked] ===
+   STATUS: [Accurate / Outdated / Partially Accurate / Inaccurate]
+   CONFIDENCE: [High / Medium / Low]
+   EVIDENCE: [What authoritative sources say about this claim]
+   SOURCES: [URLs or full source citations]
+   NOTES: [Any corrections needed, missing context, or caveats]
 
-4. Summarize overall accuracy and provide recommendations for improvement
-5. Highlight any claims that need updates or clarification"""
+4. After all individual claims, write a SUMMARY section:
+   - Overall accuracy percentage estimate
+   - Most critical corrections needed
+   - Recommendations for improving the content's reliability
+   - Any claims that require special attention for the target audience
+
+### THINKING PROCESS ###
+Before verifying each claim, briefly explain your reasoning:
+- Why you classified it as accurate/inaccurate
+- What made you choose the confidence level
+- Whether the claim is age-appropriate even if technically accurate"""
         
         # Use agent.run with streaming to handle web search
         # The enable_search parameter will be passed through extra_body in config
         response = await agent.run(prompt)
         
         if response:
+            result_text = response.text if hasattr(response, "text") else str(response)
             return {
                 "status": "verified",
-                "fact_check_result": response,
+                "fact_check_result": result_text,
                 "content_checked": content[:200] + "..." if len(content) > 200 else content
             }
         else:
@@ -138,7 +165,7 @@ FACT-CHECK INSTRUCTIONS:
 
 
 async def batch_fact_check(
-    agent: RawAgent,
+    agent: ChatAgent,
     content_list: list,
     topics: Optional[list] = None
 ) -> list:
@@ -170,7 +197,7 @@ async def batch_fact_check(
 
 
 async def verify_chapter_accuracy(
-    agent: RawAgent,
+    agent: ChatAgent,
     chapter_title: str,
     chapter_content: str,
     age_group: Optional[str] = None
@@ -193,52 +220,64 @@ async def verify_chapter_accuracy(
     - Identifies outdated information
     - Suggests supplementary sources
     """
-    prompt = f"""CHAPTER FACT-CHECK REQUEST
+    prompt = f"""=== CHAPTER FACT-CHECK REQUEST ===
 
+### CHAPTER DETAILS ###
 Chapter Title: {chapter_title}
 """
     if age_group:
         prompt += f"Target Age Group: {age_group}\n"
     
     prompt += f"""
-Chapter Content:
+### CHAPTER CONTENT TO VERIFY ###
+>>>
 {chapter_content}
+<<<
 
-COMPREHENSIVE FACT-CHECK:
-1. **Accuracy Verification**
-   - Check all factual claims against current authoritative sources
-   - Identify any scientific inaccuracies
-   - Verify historical facts and dates
-   - Check geographical information
+### TASK STEPS ###
+Follow this systematic verification process:
 
-2. **Age-Appropriateness**
-   - Is the content suitable for the target age group?
-   - Are explanations at an appropriate level of complexity?
-   - Is potentially sensitive information presented appropriately?
+**Step 1: Accuracy Verification**
+   - Extract every factual claim from the chapter content
+   - Search the web for each claim using authoritative sources
+   - Classify each claim: Accurate / Partially Accurate / Outdated / Inaccurate
+   - Verify scientific facts, historical dates, geographical data, and statistics
 
-3. **Currency & Relevance**
-   - Is the information current and up-to-date?
-   - Are statistics recent or outdated?
-   - Any outdated references or technologies mentioned?
+**Step 2: Age-Appropriateness Assessment**
+   - Is the complexity level suitable for the target age group?
+   - Are explanations clear enough without oversimplifying to the point of inaccuracy?
+   - Is potentially sensitive information presented in a developmentally appropriate way?
+   - Are analogies and examples appropriate for the audience?
 
-4. **Sources & Citations**
-   - Provide authoritative sources for verified claims
-   - Suggest additional reliable resources for learning
+**Step 3: Currency & Relevance Check**
+   - Flag any information that may be outdated (older than 3 years)
+   - Identify statistics that need updating with current data
+   - Note any outdated references, technologies, or cultural references
 
-5. **Recommendations**
-   - Specific corrections needed
-   - Suggested additions or clarifications
-   - Improvements to accuracy and engagement
+**Step 4: Sources & Recommendations**
+   - Provide authoritative source URLs for each verified claim
+   - Suggest additional reliable educational resources for teachers/students
+   - List specific corrections needed with the correct information
+   - Propose improvements to enhance both accuracy and engagement
 
-Format the response with clear sections and bullet points for easy reference."""
+### THINKING PROCESS ###
+For each fact you check, briefly explain:
+- What you searched for and what you found
+- Why you assigned that accuracy status
+- How confident you are and why
+
+### OUTPUT FORMAT ###
+Use clear section headers, bullet points, and bold text for easy scanning.
+End with a summary table: Total claims checked | Accurate | Needs correction | Outdated"""
     
     try:
         response = await agent.run(prompt)
         
+        report_text = response.text if hasattr(response, "text") else str(response)
         return {
             "chapter_title": chapter_title,
             "age_group": age_group or "Not specified",
-            "fact_check_report": response,
+            "fact_check_report": report_text,
             "status": "completed"
         }
     except Exception as e:

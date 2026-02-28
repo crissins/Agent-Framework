@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Libro Educativo — Template</title>
+  <style>
+    :root {
+      --topic-primary:   #C8521A;
+      --topic-secondary: #E8975A;
+      --topic-light:     #FDF0E6;
+      --topic-accent:    #2A7A6B;
+      --topic-accent2:   #F5C842;
+      --grade-tint:      #FEF9F4;
+      --grade-stripe:    rgba(200,82,26,0.06);
+      --page-bg:         #FFFDF9;
+      --text-dark:       #1E1208;
+      --text-mid:        #4A3525;
+      --text-light:      #8C6A4E;
+      --font-display:    Georgia, 'Times New Roman', serif;
+      --font-body:       -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --font-ui:         -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      --page-w:          780px;
+      --pad:             52px 60px 80px;
+      --b-thick:         6px;
+      --b-thin:          2px;
+      --radius:          4px;
+    }
+    .topic-profesiones { --topic-primary:#C8521A; --topic-secondary:#E8975A; --topic-light:#FDF0E6; --topic-accent:#2A7A6B; --topic-accent2:#F5C842; }
+    .topic-ciencias    { --topic-primary:#1E6E3C; --topic-secondary:#5DB67A; --topic-light:#EBF7EF; --topic-accent:#C45A1A; --topic-accent2:#F5E642; }
+    .topic-matematicas { --topic-primary:#1A4EA0; --topic-secondary:#5B8CE8; --topic-light:#EAF0FD; --topic-accent:#E8A720; --topic-accent2:#F5C842; }
+    .topic-historia    { --topic-primary:#7B3F1E; --topic-secondary:#C07348; --topic-light:#F8EDE4; --topic-accent:#2A6B7B; --topic-accent2:#F5C842; }
+    .topic-arte        { --topic-primary:#7B1E6B; --topic-secondary:#C05BA0; --topic-light:#F9EBF7; --topic-accent:#E8C020; --topic-accent2:#E8C020; }
+    .topic-literatura  { --topic-primary:#1E4E7B; --topic-secondary:#4A8AC0; --topic-light:#E8F2FA; --topic-accent:#C84A1A; --topic-accent2:#F5C842; }
+    .topic-geografia   { --topic-primary:#1E6A50; --topic-secondary:#4AAD88; --topic-light:#E6F7F2; --topic-accent:#C06020; --topic-accent2:#F5E020; }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; background: #DDD4C6; }
+    body { font-family: var(--font-body); color: var(--text-dark); background: #DDD4C6; padding: 40px 16px 80px; }
+
+    /* Cover */
+    .book-cover {
+      width: var(--page-w); max-width: 100%; margin: 0 auto 32px;
+      background: var(--topic-primary);
+      border-radius: 2px 12px 12px 2px;
+      padding: 56px 56px 48px; position: relative;
+      box-shadow: -6px 0 0 rgba(0,0,0,0.3), -2px 4px 28px rgba(0,0,0,0.35), 8px 8px 32px rgba(0,0,0,0.18);
+      overflow: hidden; animation: fadeUp .5s ease both;
+    }
+    .book-cover::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 20px;
+      background: linear-gradient(to right, rgba(0,0,0,0.35), rgba(0,0,0,0.08) 60%, transparent);
+    }
+    .book-cover::after {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 75% 25%, rgba(255,220,160,0.15), transparent 55%),
+                  radial-gradient(ellipse at 20% 80%, rgba(0,0,0,0.1), transparent 40%);
+      pointer-events: none;
+    }
+    .cover-badge {
+      position: absolute; top: 24px; right: 28px;
+      background: var(--topic-accent2); color: var(--text-dark);
+      font-family: var(--font-ui); font-weight: 900; font-size: .68rem;
+      letter-spacing: .12em; text-transform: uppercase;
+      padding: 5px 14px; border-radius: 20px; z-index: 2;
+    }
+    .cover-topic-tag {
+      font-family: var(--font-ui); font-weight: 700; font-size: .68rem;
+      letter-spacing: .2em; text-transform: uppercase;
+      color: rgba(255,255,255,.65); margin-bottom: 14px; position: relative; z-index: 2;
+    }
+    .cover-title {
+      font-family: var(--font-display); font-weight: 900;
+      font-size: clamp(1.9rem, 4vw, 2.8rem); line-height: 1.1;
+      color: #fff; margin-bottom: 20px; position: relative; z-index: 2;
+    }
+    .cover-desc {
+      font-size: .9rem; line-height: 1.7; color: rgba(255,255,255,.8);
+      border-left: 3px solid rgba(255,255,255,.3); padding-left: 14px;
+      max-width: 500px; position: relative; z-index: 2;
+    }
+    .cover-meta { display: flex; gap: 20px; align-items: center; margin-top: 30px; position: relative; z-index: 2; }
+    .cover-meta-item { font-family: var(--font-ui); font-size: .75rem; color: rgba(255,255,255,.6); display: flex; flex-direction: column; gap: 2px; }
+    .cover-meta-item strong { color: #fff; font-size: .86rem; }
+    .cover-sep { width: 1px; height: 28px; background: rgba(255,255,255,.22); }
+    .cover-deco { position: absolute; right: -20px; bottom: -20px; width: 220px; height: 220px; opacity: .09; z-index: 1; }
+
+    /* Pages */
+    .toc-page, .book-page {
+      width: var(--page-w); max-width: 100%; margin: 0 auto 28px;
+      background: var(--page-bg);
+      box-shadow: 0 4px 24px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.07);
+      border-radius: 2px; animation: fadeUp .5s ease both;
+    }
+    .toc-page { animation-delay: .1s; }
+    .book-page:nth-child(3) { animation-delay: .2s; }
+    .book-page:nth-child(4) { animation-delay: .3s; }
+
+    .page-frame {
+      margin: 13px; border: var(--b-thick) solid var(--topic-primary);
+      border-radius: var(--radius); padding: var(--pad);
+      padding-bottom: 72px; position: relative; min-height: 840px;
+      background: var(--grade-tint);
+    }
+    .page-frame::before {
+      content: ''; position: absolute; inset: 0; border-radius: var(--radius);
+      background: repeating-linear-gradient(0deg, transparent, transparent 27px, var(--grade-stripe) 27px, var(--grade-stripe) 28px);
+      pointer-events: none; opacity: .7;
+    }
+    .inner-border {
+      position: absolute; inset: 8px;
+      border: var(--b-thin) solid var(--topic-secondary);
+      border-radius: calc(var(--radius) - 2px); pointer-events: none;
+    }
+    .inner-border::before, .inner-border::after, .corner-bl, .corner-br {
+      content: '\2736'; position: absolute; font-size: 1rem; color: var(--topic-primary); line-height: 1;
+    }
+    .inner-border::before { top: -5px; left: -5px; transform: translate(-50%,-50%); }
+    .inner-border::after  { top: -5px; right: -5px; transform: translate(50%,-50%); }
+    .corner-bl { bottom: 60px; left: 20px; }
+    .corner-br { bottom: 60px; right: 20px; }
+
+    /* TOC */
+    .toc-eyebrow { font-family: var(--font-ui); font-weight: 700; font-size: .66rem; letter-spacing: .22em; text-transform: uppercase; color: var(--topic-primary); margin-bottom: 8px; position: relative; z-index: 1; }
+    .toc-heading { font-family: var(--font-display); font-weight: 700; font-size: 1.55rem; color: var(--text-dark); margin-bottom: 28px; position: relative; z-index: 1; }
+    .toc-list { list-style: none; position: relative; z-index: 1; }
+    .toc-row { display: flex; align-items: center; padding: 13px 0; border-bottom: 1px dashed rgba(0,0,0,.12); }
+    .toc-row:last-child { border-bottom: none; }
+    .toc-num { font-family: var(--font-display); font-weight: 300; font-size: 2rem; color: var(--topic-secondary); min-width: 56px; line-height: 1; }
+    .toc-info { flex: 1; padding-left: 12px; }
+    .toc-ch-title { font-family: var(--font-ui); font-weight: 800; font-size: .98rem; color: var(--text-dark); }
+    .toc-dots { flex: 1; min-width: 24px; border-bottom: 2px dotted rgba(0,0,0,.18); margin: 0 12px; align-self: flex-end; margin-bottom: 4px; }
+    .toc-pnum { font-family: var(--font-ui); font-weight: 700; font-size: .88rem; color: var(--topic-primary); min-width: 24px; text-align: right; }
+
+    /* Page header */
+    .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--topic-primary); padding-bottom: 10px; margin-bottom: 22px; position: relative; z-index: 1; }
+    .hdr-left { font-family: var(--font-ui); font-weight: 700; font-size: .64rem; letter-spacing: .18em; text-transform: uppercase; color: var(--topic-primary); display: flex; align-items: center; gap: 6px; }
+    .hdr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--topic-secondary); }
+    .hdr-right { font-family: var(--font-ui); font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-light); }
+
+    /* Chapter title */
+    .ch-title-block { margin-bottom: 26px; position: relative; z-index: 1; overflow: hidden; padding-bottom: 4px; }
+    .ch-eyebrow { font-family: var(--font-ui); font-weight: 900; font-size: .6rem; letter-spacing: .22em; text-transform: uppercase; color: var(--topic-accent); display: flex; align-items: center; gap: 8px; margin-bottom: 6px; position: relative; z-index: 2; }
+    .ch-eyebrow::after { content: ''; display: block; width: 36px; height: 2px; background: var(--topic-accent); border-radius: 2px; }
+    .ch-h2 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.45rem, 2.8vw, 1.9rem); line-height: 1.2; color: var(--text-dark); border-left: 5px solid var(--topic-primary); padding-left: 16px; position: relative; z-index: 2; }
+
+    /* Content */
+    .content { position: relative; z-index: 1; }
+    .content p { font-family: var(--font-body); font-size: .95rem; line-height: 1.78; color: var(--text-mid); margin-bottom: 12px; }
+    .content strong { color: var(--text-dark); font-weight: 700; }
+    .content em { color: var(--topic-primary); font-style: italic; }
+
+    .block-label { font-family: var(--font-ui); font-weight: 800; font-size: .62rem; letter-spacing: .2em; text-transform: uppercase; margin-bottom: 9px; }
+    .b-heading { margin: 28px 0 10px 0; padding: 0 0 8px 0; border-bottom: 2px solid var(--topic-primary); }
+    .b-heading h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: var(--topic-primary); margin: 0; line-height: 1.3; }
+    .b-concept { background: var(--topic-light); border-left: 4px solid var(--topic-primary); border-radius: 0 8px 8px 0; padding: 15px 18px; margin: 18px 0; }
+    .b-concept .block-label { color: var(--topic-primary); }
+
+    .b-example { background: rgba(42,122,107,.08); border-left: 4px solid var(--topic-accent); border-radius: 0 8px 8px 0; padding: 15px 18px; margin: 18px 0; }
+    .b-example .block-label { color: var(--topic-accent); }
+
+    .b-activity { background: #fff; border: 2px solid var(--topic-secondary); border-radius: 10px; padding: 16px 18px; margin: 18px 0; }
+    .b-activity .block-label { color: var(--topic-accent); }
+
+    .b-challenge { background: linear-gradient(135deg, var(--topic-primary), var(--topic-secondary)); border-radius: 8px; padding: 16px 18px; margin: 18px 0; }
+    .b-challenge .block-label { color: rgba(255,255,255,.75); }
+
+    .b-fact { border-top: 3px solid var(--topic-accent2); border-bottom: 3px solid var(--topic-accent2); padding: 13px 18px; margin: 18px 0; display: flex; gap: 14px; align-items: flex-start; background: #fff; }
+    .b-fact .fact-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .b-fact .block-label { color: #8A6800; }
+
+    .b-question { background: var(--topic-accent); border-radius: 50px; padding: 11px 20px; margin: 18px 0; display: flex; align-items: center; gap: 12px; }
+    .b-question .q-dot { width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.2); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 900; font-size: 1rem; color: #fff; flex-shrink: 0; }
+    .b-concept p, .b-example p, .b-activity p, .b-fact p { margin: 0 0 6px 0; }
+    .b-concept p:last-child, .b-example p:last-child, .b-activity p:last-child, .b-fact p:last-child { margin-bottom: 0; }
+    .b-challenge p, .b-challenge li { color: rgba(255,255,255,.95) !important; margin: 0 0 5px 0; }
+    .b-question p, .b-question li { color: #fff !important; font-weight: 600; font-size: .9rem; margin: 0 0 4px 0; }
+    .b-list { margin: 4px 0 6px 0; padding-left: 0; list-style: none; }
+    .b-list li { padding: 3px 0 3px 18px; position: relative; }
+    .b-list li::before { content: '\2022'; position: absolute; left: 4px; color: var(--topic-primary); font-weight: 700; }
+    .b-challenge .b-list li::before { color: rgba(255,255,255,.8); }
+    .b-question .b-list li::before { color: rgba(255,255,255,.8); }
+
+    .video-pill { display: inline-flex; align-items: center; gap: 6px; background: #14141F; color: #fff; font-family: var(--font-ui); font-size: .73rem; font-weight: 600; padding: 5px 13px; border-radius: 20px; margin-top: 8px; text-decoration: none; }
+    .video-pill::before { content: '\25B6'; color: var(--topic-primary); font-size: .6rem; }
+    .video-pill:hover { background: #2A2A3A; }
+    .video-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+    .video-qr { width: 64px; height: 64px; border-radius: 6px; border: 1px solid rgba(0,0,0,.1); flex-shrink: 0; }
+
+    .img-placeholder { background: linear-gradient(135deg, var(--topic-light), #fff); border: 2px dashed var(--topic-secondary); border-radius: 8px; padding: 30px 20px; text-align: center; margin: 20px 0; color: var(--topic-secondary); font-family: var(--font-ui); font-size: .82rem; }
+    .img-placeholder .ph-ico { font-size: 2.2rem; opacity: .5; margin-bottom: 8px; display: block; }
+    .img-block { margin: 20px 0; border-radius: 8px; overflow: hidden; border: 2px solid var(--topic-light); box-shadow: 0 3px 10px rgba(0,0,0,.1); }
+    .img-block img { width: 100%; display: block; }
+    .img-caption { font-family: var(--font-ui); font-size: .7rem; color: var(--text-light); font-style: italic; padding: 5px 12px; background: var(--topic-light); text-align: center; }
+
+    .divider { border: none; border-top: 1px dashed rgba(0,0,0,.15); margin: 20px 0; }
+
+    /* Footer */
+    .page-footer { position: absolute; bottom: 18px; left: 26px; right: 26px; display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid var(--topic-secondary); padding-top: 8px; }
+    .footer-title { font-family: var(--font-ui); font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-light); }
+    .footer-chapter { font-family: var(--font-ui); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-light); text-align: right; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .page-num { width: 28px; height: 28px; border-radius: 50%; background: var(--topic-primary); color: #fff; font-family: var(--font-display); font-weight: 700; font-size: .8rem; display: flex; align-items: center; justify-content: center; }
+
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 840px) { :root { --page-w: 100%; --pad: 30px 24px 70px; } }
+    @media print { body { background: white; padding: 0; } .book-cover, .toc-page, .book-page { box-shadow: none; margin: 0; page-break-after: always; animation: none; } .page-frame { min-height: auto; } }
+  </style>
+</head>
+<body class="topic-profesiones">
+<div id="app"></div>
+
+<script>
+// ─── BOOK DATA ─────────────────────────────────────────────────────────────
+// Replace this object with your real JSON. All strings use only ASCII-safe
+// characters to avoid JS parser issues with curly quotes or special glyphs.
+var BOOK = {
+  request: {
+    topic: "Profesiones",
+    age: 10,
+    language: "Espanol",
+    country: "Mexico",
+    method: "Escandinavo",
+    chapters: 2
+  },
+  title: "Mis Suenos Profesionales: Un Viaje por Mexico",
+  description: "Este libro interactivo introduce a ninos de 10 anos en Mexico al mundo de las profesiones mediante el metodo escandinavo. A traves de experiencias significativas conectadas con la realidad local, los estudiantes descubren el valor del trabajo y se preparan para pensar en sus propios suenos con confianza y creatividad.",
+  toc: [
+    {
+      title: "Descubriendo Profesiones en Mi Comunidad",
+      summary: "Los ninos exploran diversas profesiones presentes en su comunidad mexicana, como maestros, medicos, agricultores y artesanos. A traves de juegos de roles y entrevistas, descubren como cada profesion contribuye al bienestar social."
+    },
+    {
+      title: "Mi Camino Profesional: Diseno con Proposito",
+      summary: "Los estudiantes disenan un proyecto personal: crean un Mapa de Mis Suenos Profesionales donde identifican sus intereses, habilidades y profesiones que les inspiran usando materiales reciclados y creatividad."
+    }
+  ],
+  chapters: [
+    {
+      title: "Descubriendo Profesiones en Mi Comunidad",
+      blocks: [
+        {
+          type: "concept",
+          label: "Concepto Clave",
+          text: "Una profesion es una forma de trabajar que ayuda a las personas y a la comunidad. En Mexico, cada oficio tiene un valor especial: los maestros ensenan, los medicos cuidan de la salud, los agricultores cultivan alimentos, y los artesanos crean objetos hermosos con sus manos. Todos son importantes para que nuestra vida sea mejor."
+        },
+        {
+          type: "example",
+          label: "Ejemplo en tu Vida",
+          text: "Piensa en tu escuela: quien prepara el desayuno? Tal vez una senora del comedor. Quien arregla las luces? Un tecnico. Y quien te ensena matematicas? Tu maestra o maestro. Todos ellos tienen una profesion que hace que tu dia escolar funcione perfectamente."
+        },
+        {
+          type: "question",
+          label: "Pregunta para Pensar",
+          text: "Que habilidad tienes que podrias usar en una profesion? Si te gusta contar historias, podrias ser narrador o guia turistico. Si te encanta armar cosas con tus manos, te imaginas siendo carpintero o disenador industrial?"
+        },
+        {
+          type: "image",
+          alt: "Nino mexicano conversando con un artesano en un mercado local mostrando una figura de barro",
+          url: ""
+        },
+        {
+          type: "activity",
+          label: "Actividad en Familia",
+          text: "Haz una Caja de Profesiones con tu familia. Recorta fotos de personas que conoces: abuelos, vecinos, tias. Pegalas en una caja decorada y escribe que hacen y por que es importante su trabajo para la comunidad.",
+          video: "Video: Profesiones en mi pueblo - 3 min, animacion estilo dibujos mexicanos"
+        },
+        {
+          type: "challenge",
+          label: "Desafio Creativo",
+          text: "Imagina que tu inventas una nueva profesion para ayudar a tu comunidad. Puede ser guardian de arboles urbanos, cuidador de perros callejeros, o disenador de juegos para ninos en parques. Dibuja tu profesion y escribe un nombre creativo. Que herramientas usarias? Que harias cada dia?"
+        },
+        {
+          type: "fact",
+          label: "Sabias que...",
+          text: "En Mexico, mas del 50% de las personas que trabajan en el campo son mujeres. Muchas son agricultoras que cultivan maiz, frijol y chile. Su trabajo nos da los ingredientes para nuestros platillos favoritos como el mole o el pozole.",
+          video: "Video: Un dia en la vida de una mujer campesina en Oaxaca - 4 min"
+        }
+      ]
+    },
+    {
+      title: "Mi Camino Profesional: Diseno con Proposito",
+      blocks: [
+        {
+          type: "concept",
+          label: "Concepto Clave",
+          text: "Disenar con proposito significa crear algo que no solo sea bonito o divertido, sino que tambien ayude a otras personas. En este capitulo, aprendes a usar tus ideas y talentos para imaginar como podrias usar una profesion en el futuro para ayudar a tu familia, tu comunidad o incluso al planeta."
+        },
+        {
+          type: "image",
+          alt: "Nino mexicano dibujando un mapa con colores vivos usando materiales reciclados como marcos",
+          url: ""
+        },
+        {
+          type: "example",
+          label: "Ejemplo en tu Vida",
+          text: "Imagina que te encanta pintar y tu abuela tiene una pequena tienda de tortillas en tu colonia. Y si creas un cartel reciclado con botellas de vidrio y papel de periodico para que su negocio luzca mas bonito y atraiga mas clientes? Eso no es solo arte: es diseno con proposito! Ayudas a tu familia y haces algo util para tu comunidad."
+        },
+        {
+          type: "question",
+          label: "Pregunta para Pensar",
+          text: "Que harias con tu talento si pudieras ayudar a alguien especial en tu vida, como tu mama, papa, abuelo o vecino? Piensa en un problema real que ellos tengan y como tu habilidad podria resolverlo."
+        },
+        {
+          type: "activity",
+          label: "Actividad en Familia",
+          text: "Hagan una Noche de Ideas con tu familia. Reunan todos los materiales reciclados que tienen en casa: cajas de carton, botellas, telas viejas, revistas. Con ellos, creen juntos un Mapa de Mis Suenos Profesionales. Dibujen un mapa de su barrio o ciudad y en cada lugar pongan un simbolo de una profesion que les gustaria tener.",
+          video: "Video: Como hacer un mapa con materiales reciclados - Mexico"
+        },
+        {
+          type: "challenge",
+          label: "Desafio Creativo",
+          text: "Dibuja tu propio Mapa de Mis Suenos Profesionales en una hoja grande. Usa colores, pegatinas y hasta trozos de tela o papel de periodico. En el centro pon tu nombre y tu sueno. Alrededor dibuja lugares donde quieres ayudar: una escuela, una plaza, un huerto comunitario."
+        },
+        {
+          type: "fact",
+          label: "Sabias que...",
+          text: "En Dinamarca, los ninos desde los 8 anos ya hacen proyectos pequenos para mejorar su escuela o barrio. Algunos disenaron bicicletas con ruedas recicladas para ninos con discapacidad. El espiritu de ayudar es el mismo que tenemos aqui en Mexico. Tu idea puede cambiar algo pequeno o grande.",
+          video: ""
+        }
+      ]
+    }
+  ]
+};
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────
+function gradeLabel(age) {
+  var map = {6:"1 Primaria",7:"2 Primaria",8:"3 Primaria",9:"4 Primaria",
+             10:"5 Primaria",11:"6 Primaria",12:"1 Secundaria",13:"2 Secundaria",
+             14:"3 Secundaria",15:"1 Preparatoria",16:"2 Preparatoria",17:"3 Preparatoria"};
+  return map[age] || "Preparatoria";
+}
+
+function topicClass(t) {
+  t = (t || "").toLowerCase();
+  if (/ciencia|biolog|quim|fisic/.test(t))       return "topic-ciencias";
+  if (/matem|algebra|geomet/.test(t))             return "topic-matematicas";
+  if (/histor|social/.test(t))                    return "topic-historia";
+  if (/arte|musica|dibujo/.test(t))               return "topic-arte";
+  if (/liter|espanol|lectura|escrit/.test(t))     return "topic-literatura";
+  if (/geograf|natur|ambient/.test(t))            return "topic-geografia";
+  return "topic-profesiones";
+}
+
+function esc(s) {
+  return String(s || "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+// ─── BLOCK RENDERERS ──────────────────────────────────────────────────────
+// Convert plain text (with \n and • bullets) into styled HTML paragraphs.
+function renderText(raw) {
+  if (!raw) return '';
+  var paras = raw.split(/\n{2,}/);
+  var out = '';
+  for (var pi = 0; pi < paras.length; pi++) {
+    var para = paras[pi].trim();
+    if (!para) continue;
+    // Bullet list paragraph: every line starts with •
+    var lines = para.split('\n');
+    var allBullets = lines.every(function(l){ return !l.trim() || l.trim().charAt(0) === '\u2022'; });
+    if (allBullets) {
+      out += '<ul class="b-list">';
+      for (var li = 0; li < lines.length; li++) {
+        var item = lines[li].trim().replace(/^\u2022\s*/, '');
+        if (item) out += '<li>' + esc(item) + '</li>';
+      }
+      out += '</ul>';
+    } else {
+      // Escape HTML entities first, then convert newlines to <br>
+      out += '<p>' + esc(para).replace(/\n/g, '<br>') + '</p>';
+    }
+  }
+  return out;
+}
+
+function renderBlock(b) {
+  var out = "";
+  switch (b.type) {
+    case "heading":
+      out = '<div class="b-heading"><h2>' + esc(b.text) + '</h2></div>';
+      break;
+    case "concept":
+      out = '<div class="b-concept"><div class="block-label">' + esc(b.label) + '</div>';
+      out += renderText(b.text);
+      out += '</div>';
+      break;
+    case "example":
+      out = '<div class="b-example"><div class="block-label">' + esc(b.label) + '</div>';
+      out += renderText(b.text);
+      out += '</div>';
+      break;
+    case "activity":
+      out = '<div class="b-activity"><div class="block-label">' + esc(b.label) + '</div>';
+      out += renderText(b.text);
+      if (b.video) { out += renderVideoPill(b); }
+      out += '</div>';
+      break;
+    case "challenge":
+      out = '<div class="b-challenge"><div class="block-label">&#9998; ' + esc(b.label) + '</div>';
+      out += renderText(b.text);
+      out += '</div>';
+      break;
+    case "fact":
+      out = '<div class="b-fact"><div class="fact-icon">&#128161;</div><div>';
+      out += '<div class="block-label">' + esc(b.label) + '</div>';
+      out += renderText(b.text);
+      if (b.video) { out += renderVideoPill(b); }
+      out += '</div></div>';
+      break;
+    case "question":
+      out = '<div class="b-question"><div class="q-dot">?</div><div>';
+      out += renderText(b.text);
+      out += '</div></div>';
+      break;
+    case "image":
+      if (b.url) {
+        out = '<div class="img-block">';
+        out += '<img src="' + esc(b.url) + '" alt="' + esc(b.alt) + '" ';
+        out += 'onerror="this.parentNode.innerHTML=\'<div class=&quot;img-placeholder&quot;><span class=&quot;ph-ico&quot;>&#128444;</span>' + esc(b.alt).replace(/'/g, "\\'") + '</div>\'">';
+        out += '<div class="img-caption">' + esc(b.alt) + '</div></div>';
+      } else {
+        out = '<div class="img-placeholder">';
+        out += '<span class="ph-ico">&#128444;</span>';
+        out += esc(b.alt);
+        out += '</div>';
+      }
+      break;
+    case "divider":
+      out = '<hr class="divider">';
+      break;
+  }
+  return out;
+}
+
+// ─── VIDEO PILL + QR ──────────────────────────────────────────────────────
+function renderVideoPill(b) {
+  var out = '<div class="video-row">';
+  if (b.video_qr) {
+    out += '<img class="video-qr" src="' + esc(b.video_qr) + '" alt="QR">';
+  }
+  if (b.video_url) {
+    out += '<a class="video-pill" href="' + esc(b.video_url) + '" target="_blank" rel="noopener">' + esc(b.video) + '</a>';
+  } else {
+    out += '<span class="video-pill">' + esc(b.video) + '</span>';
+  }
+  out += '</div>';
+  return out;
+}
+
+// ─── BUILD BOOK ───────────────────────────────────────────────────────────
+function buildBook(d) {
+  var grade = gradeLabel(d.request.age);
+  var tc    = topicClass(d.request.topic);
+  document.body.classList.add(tc);
+
+  var html = "";
+  var shortTitle = d.title.length > 38 ? d.title.substring(0, 38) + "..." : d.title;
+
+  // Cover
+  html += '<div class="book-cover">';
+  html += '<div class="cover-badge">' + grade + ' &middot; ' + d.request.age + ' anos</div>';
+  html += '<div class="cover-topic-tag">' + esc(d.request.topic) + '</div>';
+  html += '<div class="cover-title">' + esc(d.title) + '</div>';
+  html += '<div class="cover-desc">' + esc(d.description) + '</div>';
+  html += '<div class="cover-meta">';
+  html += metaItem("Pais", d.request.country);
+  html += '<div class="cover-sep"></div>';
+  html += metaItem("Metodo", d.request.method);
+  html += '<div class="cover-sep"></div>';
+  html += metaItem("Capitulos", String(d.request.chapters));
+  html += '<div class="cover-sep"></div>';
+  html += metaItem("Idioma", d.request.language);
+  html += '</div>';
+  html += '<svg class="cover-deco" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">';
+  html += '<circle cx="100" cy="100" r="90" stroke="white" stroke-width="2"/>';
+  html += '<circle cx="100" cy="100" r="65" stroke="white" stroke-width="1.5"/>';
+  html += '<circle cx="100" cy="100" r="40" stroke="white" stroke-width="1"/>';
+  html += '<line x1="10" y1="100" x2="190" y2="100" stroke="white" stroke-width="1"/>';
+  html += '<line x1="100" y1="10" x2="100" y2="190" stroke="white" stroke-width="1"/>';
+  html += '<line x1="30" y1="30" x2="170" y2="170" stroke="white" stroke-width="0.8"/>';
+  html += '<line x1="170" y1="30" x2="30" y2="170" stroke="white" stroke-width="0.8"/>';
+  html += '</svg>';
+  html += '</div>';
+
+  // TOC
+  html += '<div class="toc-page"><div class="page-frame"><div class="inner-border"></div>';
+  html += '<div class="toc-eyebrow">Indice</div>';
+  html += '<div class="toc-heading">Contenido del Libro</div>';
+  html += '<ul class="toc-list">';
+  for (var i = 0; i < d.toc.length; i++) {
+      html += '<li class="toc-row">';
+    html += '<span class="toc-num">0' + (i + 1) + '</span>';
+    html += '<div class="toc-info"><div class="toc-ch-title">' + esc(d.toc[i].title) + '</div></div>';
+    html += '<span class="toc-dots"></span>';
+    html += '<span class="toc-pnum">' + (i + 2) + '</span>';
+    html += '</li>';
+  }
+  html += '</ul>';
+  html += pageFooter(shortTitle, "i", grade);
+  html += '</div></div>';
+
+  // Chapter pages
+  for (var c = 0; c < d.chapters.length; c++) {
+    var ch   = d.chapters[c];
+    var pNum = c + 2;
+    var chShort = ch.title.length > 28 ? ch.title.substring(0, 28) + "..." : ch.title;
+
+    html += '<div class="book-page"><div class="page-frame"><div class="inner-border"></div>';
+    html += '<span class="corner-bl">&#10038;</span><span class="corner-br">&#10038;</span>';
+
+    html += '<div class="page-header">';
+    html += '<div class="hdr-left"><span class="hdr-dot"></span>' + esc(d.request.topic) + '</div>';
+    html += '<div class="hdr-right">' + esc(shortTitle) + '</div>';
+    html += '</div>';
+
+    html += '<div class="ch-title-block">';
+    html += '<div class="ch-eyebrow">Capitulo ' + (c + 1) + '</div>';
+    html += '<h2 class="ch-h2">' + esc(ch.title) + '</h2>';
+    html += '</div>';
+
+    html += '<div class="content">';
+    for (var b = 0; b < ch.blocks.length; b++) {
+      html += renderBlock(ch.blocks[b]);
+    }
+    html += '</div>';
+
+    html += pageFooter(shortTitle, String(pNum), "Cap. " + (c + 1) + " - " + chShort);
+    html += '</div></div>';
+  }
+
+  return html;
+}
+
+function metaItem(label, value) {
+  return '<div class="cover-meta-item"><span>' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>';
+}
+
+function pageFooter(title, num, chapter) {
+  var html = '<div class="page-footer">';
+  html += '<span class="footer-title">' + esc(title) + '</span>';
+  html += '<div class="page-num">' + esc(num) + '</div>';
+  html += '<span class="footer-chapter">' + esc(chapter) + '</span>';
+  html += '</div>';
+  return html;
+}
+
+// Render
+document.getElementById("app").innerHTML = buildBook(BOOK);
+</script>
+</body>
+</html>

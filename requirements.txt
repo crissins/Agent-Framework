@@ -2,6 +2,14 @@
 agent-framework==1.0.0b260212
 python-dotenv
 
+# HTTP Server & Agent Inspector Integration
+azure-ai-agentserver-core==1.0.0b10
+azure-ai-agentserver-agentframework==1.0.0b10
+agent-dev-cli
+
+# Debugging
+debugpy
+
 # LLM & API Clients
 openai
 azure-identity
@@ -9,15 +17,17 @@ azure-identity
 # Observability & Tracing
 opentelemetry-exporter-otlp-proto-grpc
 
-# Image Generation
+# Image Generation & TTS
 dashscope
+edge-tts
+pydub
 
 # Web UI
-streamlit
+streamlit==1.54.0
 markdown
 
-# PDF Generation (HTML to PDF conversion)
-weasyprint
+# PDF Generation (pure Python, no native dependencies)
+fpdf2
 
 # Utilities
 requests
@@ -27,7 +37,8 @@ aiohttp
 # Optional: Video & Search Support
 qrcode
 pillow
-duckduckgo-search
+ddgs
+curl_cffi
 
 # Optional: Development Tools
 pytest

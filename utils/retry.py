@@ -49,11 +49,23 @@ def async_retry(max_retries: int = 3, base_delay: float = 1.0, max_delay: float 
                 except exceptions as e:
                     last_exception = e
                     if attempt > max_retries:
-                        print(f"❌ All {max_retries} retries failed for {func.__name__}. Last error: {e}")
+                        logger.exception(
+                            "All %s retries failed for %s. Last error: %s",
+                            max_retries,
+                            func.__name__,
+                            e,
+                        )
                         raise last_exception
                     
                     delay = calculate_delay(attempt, base_delay, max_delay)
-                    print(f"⚠️  {func.__name__} failed ({e}). Retrying in {delay:.2f}s... (Attempt {attempt}/{max_retries})")
+                    logger.warning(
+                        "%s failed (%s). Retrying in %.2fs... (Attempt %s/%s)",
+                        func.__name__,
+                        e,
+                        delay,
+                        attempt,
+                        max_retries,
+                    )
                     await asyncio.sleep(delay)
             
             return None # Should not be reached
@@ -81,11 +93,23 @@ def sync_retry(max_retries: int = 3, base_delay: float = 1.0, max_delay: float =
                 except exceptions as e:
                     last_exception = e
                     if attempt > max_retries:
-                        print(f"❌ All {max_retries} retries failed for {func.__name__}. Last error: {e}")
+                        logger.exception(
+                            "All %s retries failed for %s. Last error: %s",
+                            max_retries,
+                            func.__name__,
+                            e,
+                        )
                         raise last_exception
                     
                     delay = calculate_delay(attempt, base_delay, max_delay)
-                    print(f"⚠️  {func.__name__} failed ({e}). Retrying in {delay:.2f}s... (Attempt {attempt}/{max_retries})")
+                    logger.warning(
+                        "%s failed (%s). Retrying in %.2fs... (Attempt %s/%s)",
+                        func.__name__,
+                        e,
+                        delay,
+                        attempt,
+                        max_retries,
+                    )
                     time.sleep(delay)
             
             return None # Should not be reached

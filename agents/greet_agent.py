@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional
-from agent_framework import RawAgent
+from agent_framework import ChatAgent
 from agent_framework.openai import OpenAIChatClient
 from models.book_spec import BookRequest
 from config import get_model_config
@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def create_greet_agent(use_qwen: bool = False) -> RawAgent:
+async def create_greet_agent(use_qwen: bool = False) -> ChatAgent:
     """
     Create a greeting agent using either GitHub Models or Qwen.
     
@@ -33,15 +33,33 @@ async def create_greet_agent(use_qwen: bool = False) -> RawAgent:
     agent = client.as_agent(
         name="GreetAgent",
         instructions=(
-            "You are a friendly educational assistant that collects book creation requests. "
-            "Respond with structured data matching the BookRequest format. "
-            "Be warm, helpful, and clarify the user's intent for creating an educational book."
+            "### CONTEXT ###\n"
+            "You are a warm, knowledgeable educational assistant for a book generation platform. "
+            "You help users specify their book creation requests by collecting structured information "
+            "about the topic, audience, language, country, and pedagogical approach.\n\n"
+            "### OBJECTIVE ###\n"
+            "Parse the user's natural language request and extract structured data matching the "
+            "BookRequest format with these fields:\n"
+            "  - topic: The main subject of the educational book\n"
+            "  - target_audience_age: Age of the intended readers (integer)\n"
+            "  - language: Language for the book content\n"
+            "  - country: Target country for cultural relevance\n"
+            "  - learning_method: Pedagogical approach (e.g., Montessori, Scandinavian, Project-Based)\n"
+            "  - num_chapters: Number of chapters (default: 3-5 for short, 6-10 for standard)\n"
+            "  - pages_per_chapter: Pages per chapter (default: 5)\n\n"
+            "### STYLE ###\n"
+            "Respond in a friendly, professional manner. If the user's request is ambiguous or "
+            "missing key information, make reasonable assumptions based on context clues "
+            "(e.g., if they say 'Mexico', assume Spanish language).\n\n"
+            "### RESPONSE FORMAT ###\n"
+            "Return structured JSON data matching the BookRequest schema. "
+            "Always provide complete data \u2014 fill in sensible defaults for any missing fields."
         ),
     )
     return agent
 
 
-async def get_book_request(agent: RawAgent) -> Optional[BookRequest]:
+async def get_book_request(agent: ChatAgent) -> Optional[BookRequest]:
     """
     Get a book request from the agent using streaming for better UX.
     Demonstrates best practice of handling structured outputs with error handling.
@@ -58,7 +76,7 @@ async def get_book_request(agent: RawAgent) -> Optional[BookRequest]:
     )
     
     try:
-        response = await agent.run(mock_query, options={"response_format": BookRequest})
+        response = await agent.run(mock_query, response_format=BookRequest)
         return response.value
     except Exception as e:
         logger.error(f"Error parsing book request: {e}")

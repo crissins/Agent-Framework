@@ -1,3 +1,4 @@
+import re
 import markdown
 from models.book_spec import BookOutput
 
@@ -40,6 +41,17 @@ def generate_html_book(output: BookOutput, output_path: str):
     chapter_blocks = []
     for ch in output.chapters:
         md_html = markdown.markdown(ch.markdown_content or "", extensions=["extra"]) if ch.markdown_content is not None else ""
+        # Replace leftover [IMAGE:]/[VIDEO:] text with styled HTML
+        md_html = re.sub(
+            r'\[IMAGE:\s*([^\]]+)\]',
+            '<div style="border-left:6px solid #006341;padding:12px;margin:12px 0;background:rgba(0,99,65,0.06);border-radius:6px;"><span>🖼️</span> <em>\\1</em></div>',
+            md_html,
+        )
+        md_html = re.sub(
+            r'\[VIDEO:\s*([^\]]+)\]',
+            '<div style="border-left:6px solid #CE1126;padding:12px;margin:12px 0;background:rgba(206,17,38,0.06);border-radius:6px;"><span>🎬</span> <em>\\1</em></div>',
+            md_html,
+        )
         block = f"<article class=\"chapter-card\"><h2>{ch.chapter_title}</h2>{md_html}</article>"
         chapter_blocks.append(block)
 

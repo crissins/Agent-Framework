@@ -30,11 +30,10 @@ async def image_search_tool(query: str, timeout: int = 10) -> Optional[ImagePlac
         try:
             with DDGS() as ddgs:
                 results = list(ddgs.images(
-                    keywords=query,
+                    query,
                     region="mx-es",
                     safesearch="moderate",
                     max_results=1,
-                    timeout=timeout
                 ))
                 return results[0]["image"] if results else None
         except Exception as e:

@@ -12,6 +12,36 @@ class ModelProvider(Enum):
     QWEN = "qwen"      # Qwen via DashScope
 
 
+# ── TTS / Voice Configuration ────────────────────────────────────────────
+TTS_MODELS = {
+    "qwen3-tts-vc-realtime": "Qwen3 TTS-VC Realtime – Voice cloning (Singapore)",
+}
+
+# ── Voice Clone (Qwen3 TTS-VC) Configuration ─────────────────────────────
+VC_MODELS = {
+    "qwen3-tts-vc-realtime-2025-11-27": "Qwen3 TTS-VC Realtime – Voice cloning (Singapore)",
+}
+
+TTS_VOICES = {
+    "longxiaochun": "Female · Warm · Narrator",
+    "longxiaoxia": "Female · Lively · Storyteller",
+    "longyue": "Female · Gentle · Soothing",
+    "longxiaofei": "Female · Clear · Professional",
+    "longlaotie": "Male · Deep · Authoritative",
+    "longshuo": "Male · Energetic · Narrator",
+    "longjielidou": "Male · Humorous · Storyteller",
+    "longxiang": "Male · Calm · Educational",
+    "longtong": "Child · Bright · Educational",
+    "longxiaobai": "Youth · Neutral · General",
+}
+
+TTS_AUDIO_FORMATS = {
+    "wav_24k": "WAV 24 kHz (native, recommended)",
+    "wav_16k": "WAV 16 kHz",
+    "wav_22k": "WAV 22 kHz",
+}
+
+
 class ModelConfig:
     """Configuration for different model providers."""
     
@@ -29,27 +59,27 @@ class ModelConfig:
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        "model_id": "qwen-plus",
+        "model_id": "qwen-flash",
         "region": "singapore",
-        "description": "Qwen Plus (Singapore region)"
+        "description": "Qwen Flash (Singapore region)"
     }
     
     QWEN_CONFIG_BEIJING = {
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model_id": "qwen-plus",
+        "model_id": "qwen-flash",
         "region": "beijing",
-        "description": "Qwen Plus (Beijing region)"
+        "description": "Qwen Flash (Beijing region)"
     }
     
     QWEN_CONFIG_US = {
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope-us.aliyuncs.com/compatible-mode/v1",
-        "model_id": "qwen-plus",
+        "model_id": "qwen-flash",
         "region": "us-virginia",
-        "description": "Qwen Plus (US Virginia region)"
+        "description": "Qwen Flash (US Virginia region)"
     }
 
 
@@ -62,12 +92,17 @@ def load_env_vars():
         with open(env_path, 'r') as file:
             for line in file:
                 line = line.strip()
-                if line and not line.startswith('#'):
+                if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Strip surrounding quotes (single or double)
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                        value = value[1:-1]
                     os.environ[key] = value
 
 
-def get_model_config(use_qwen: bool = False, qwen_region: str = "singapore") -> dict:
+def get_model_config(use_qwen: bool = False, qwen_region: str | None = None) -> dict:
     """
     Get model configuration based on provider selection.
     
@@ -82,9 +117,10 @@ def get_model_config(use_qwen: bool = False, qwen_region: str = "singapore") -> 
     load_env_vars()
     
     if use_qwen:
-        if qwen_region == "beijing":
+        resolved_region = (qwen_region or os.getenv("DASHSCOPE_REGION", "singapore")).strip().lower()
+        if resolved_region == "beijing":
             return ModelConfig.QWEN_CONFIG_BEIJING
-        elif qwen_region == "us-virginia":
+        elif resolved_region == "us-virginia":
             return ModelConfig.QWEN_CONFIG_US
         else:  # default to singapore
             return ModelConfig.QWEN_CONFIG_SINGAPORE
@@ -127,7 +163,7 @@ def get_fact_check_config() -> dict:
     return {
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
-        "base_url": "https://api.openai.com/v1",  # OpenAI compatible
+        "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",  # DashScope OpenAI-compatible
         "model_id": "qwen3-max",  # For web search support
         "web_search_enabled": True,
         "description": "Qwen3-Max with Web Search for Fact-Checking"

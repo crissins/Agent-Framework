@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book Color Palettes</title>
+<style>
+  /* ── System font stack — no external CDN ── */
+  :root {
+    --font-serif:  Georgia, 'Times New Roman', serif;
+    --font-sans:   -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono:   'SF Mono', Consolas, 'Courier New', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+
+  body {
+    font-family: var(--font-sans);
+    background: #18181B;
+    color: #F4F0EC;
+    padding: 44px 24px 80px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ──────────────────────────────────────── */
+  .page-header {
+    text-align: center;
+    margin-bottom: 52px;
+  }
+  .page-header h1 {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: clamp(2rem, 5vw, 3rem);
+    color: #F4F0EC;
+    letter-spacing: -.02em;
+    line-height: 1.1;
+    margin-bottom: 10px;
+  }
+  .page-header p {
+    font-size: .82rem;
+    color: rgba(244,240,236,.4);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  /* ── Grid ────────────────────────────────────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 24px;
+    max-width: 1160px;
+    margin: 0 auto;
+  }
+
+  /* ── Card ────────────────────────────────────────── */
+  .card {
+    background: #222228;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 6px 28px rgba(0,0,0,.5);
+    transition: transform .22s ease, box-shadow .22s ease;
+    position: relative;
+    border: 1.5px solid rgba(255,255,255,.06);
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 44px rgba(0,0,0,.65);
+  }
+
+  /* ── Book mini-preview ───────────────────────────── */
+  .preview {
+    height: 172px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .preview-page {
+    position: absolute;
+    inset: 12px;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .preview-outer-border {
+    position: absolute;
+    inset: 0;
+    border-radius: 3px;
+    border-width: 4px;
+    border-style: solid;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .preview-inner-border {
+    position: absolute;
+    inset: 7px;
+    border-radius: 2px;
+    border-width: 1.5px;
+    border-style: solid;
+    z-index: 2;
+    pointer-events: none;
+    opacity: .6;
+  }
+  .preview-content {
+    position: absolute;
+    inset: 0;
+    padding: 20px 20px 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1;
+  }
+  .preview-headline {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: .88rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .preview-stripe {
+    height: 9px;
+    border-radius: 2px;
+  }
+  .preview-stripe.bl { width: 88%; }
+  .preview-stripe.bm { width: 68%; }
+  .preview-stripe.bs { width: 45%; }
+  .preview-footer-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+  }
+  .preview-page-num {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    font-family: var(--font-serif);
+    font-size: .62rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+  }
+
+  /* Corner ornaments */
+  .corner {
+    position: absolute;
+    font-size: .75rem;
+    line-height: 1;
+    z-index: 3;
+  }
+  .corner.tl { top: 14px;  left: 14px; }
+  .corner.tr { top: 14px;  right: 14px; }
+  .corner.bl { bottom: 32px; left: 14px; }
+  .corner.br { bottom: 32px; right: 14px; }
+
+  /* ── Swatch bar ──────────────────────────────────── */
+  .swatches {
+    display: flex;
+    height: 40px;
+  }
+  .swatch {
+    flex: 1;
+    position: relative;
+    transition: flex .18s ease;
+    cursor: default;
+  }
+  .swatch:hover { flex: 1.8; }
+  .swatch-tip {
+    position: absolute;
+    bottom: 4px; left: 50%;
+    transform: translateX(-50%);
+    font-size: .5rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity .18s;
+    pointer-events: none;
+  }
+  .swatch:hover .swatch-tip { opacity: 1; }
+
+  /* ── Card footer ─────────────────────────────────── */
+  .card-footer {
+    padding: 14px 18px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .theme-name {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #F4F0EC;
+  }
+  .theme-tag {
+    font-size: .68rem;
+    color: rgba(244,240,236,.38);
+    margin-top: 3px;
+    letter-spacing: .05em;
+  }
+  .copy-btn {
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.1);
+    color: rgba(244,240,236,.65);
+    font-size: .68rem;
+    font-weight: 700;
+    font-family: var(--font-sans);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 7px 13px;
+    border-radius: 18px;
+    cursor: pointer;
+    transition: background .18s, color .18s, border-color .18s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
+  .copy-btn.ok { background: #2A7A3A; color: #fff; border-color: #2A7A3A; }
+
+  /* ── CSS vars panel (expand on click) ───────────────*/
+  .vars-panel {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .3s ease;
+    background: #111115;
+    border-top: 1px solid rgba(255,255,255,.05);
+  }
+  .card.open .vars-panel { max-height: 200px; }
+  .vars-inner { padding: 12px 18px 14px; }
+  .var-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    line-height: 2;
+  }
+  .var-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.18);
+    flex-shrink: 0;
+  }
+  .var-key  { font-family: var(--font-mono); font-size: .68rem; color: #7EC8FF; }
+  .var-colon{ color: rgba(244,240,236,.25); font-size: .68rem; }
+  .var-val  { font-family: var(--font-mono); font-size: .68rem; color: #A8E6A3; }
+
+  /* ── Hidden textarea for fallback copy ──────────────*/
+  #copy-buffer {
+    position: fixed;
+    top: -9999px; left: -9999px;
+    width: 1px; height: 1px;
+    opacity: 0;
+    font-size: 12px;
+  }
+
+  /* ── Selected ring ───────────────────────────────── */
+  .card.selected {
+    border-color: rgba(42,200,80,.45);
+    box-shadow: 0 0 0 3px rgba(42,200,80,.25), 0 14px 44px rgba(0,0,0,.65);
+  }
+  .selected-pill {
+    display: none;
+    position: absolute;
+    top: 10px; right: 10px;
+    background: #2A7A3A;
+    color: #fff;
+    font-size: .58rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 10px;
+    z-index: 20;
+  }
+  .card.selected .selected-pill { display: block; }
+
+  /* ── Rainbow gradient helper ─────────────────────── */
+  .rainbow-bg {
+    background: linear-gradient(135deg,#E84060,#F88020,#F8C820,#20A870,#2070E8,#6030C8) !important;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Book Color Palettes</h1>
+  <p>Click preview to see CSS vars &nbsp;·&nbsp; Hover swatches for hex &nbsp;·&nbsp; Copy CSS to clipboard</p>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<!-- VSCode-safe fallback clipboard buffer -->
+<textarea id="copy-buffer" readonly aria-hidden="true"></textarea>
+
+<script>
+// ── Palette definitions ─────────────────────────────────────────────────
+var PALETTES = [
+  {
+    id: "azul",
+    name: "Ocean Blue",
+    tag: "Ciencias / Matematicas",
+    primary:   "#1A4EA0",
+    secondary: "#5B8CE8",
+    light:     "#EAF0FD",
+    accent:    "#E8A720",
+    accent2:   "#F5C842",
+    pageBg:    "#F7FAFF",
+    textColor: "#0E1E40"
+  },
+  {
+    id: "rojo",
+    name: "Ruby Red",
+    tag: "Historia / Civica",
+    primary:   "#B01E2A",
+    secondary: "#E0555E",
+    light:     "#FDF0F0",
+    accent:    "#1A5CA0",
+    accent2:   "#F5C842",
+    pageBg:    "#FFF8F8",
+    textColor: "#3A0A0E"
+  },
+  {
+    id: "naranja",
+    name: "Sunset Orange",
+    tag: "Profesiones / Sociales",
+    primary:   "#C8521A",
+    secondary: "#E8975A",
+    light:     "#FDF0E6",
+    accent:    "#2A7A6B",
+    accent2:   "#F5C842",
+    pageBg:    "#FFFDF9",
+    textColor: "#1E1208"
+  },
+  {
+    id: "rosa",
+    name: "Blossom Pink",
+    tag: "Arte / Literatura",
+    primary:   "#B8286A",
+    secondary: "#E074A8",
+    light:     "#FDF0F7",
+    accent:    "#5A28B8",
+    accent2:   "#FFCC44",
+    pageBg:    "#FFF8FC",
+    textColor: "#2A0818"
+  },
+  {
+    id: "negro",
+    name: "Midnight",
+    tag: "Tecnologia / Programacion",
+    primary:   "#1A1A2E",
+    secondary: "#3A3A5C",
+    light:     "#EDEDF5",
+    accent:    "#E8C520",
+    accent2:   "#E8C520",
+    pageBg:    "#F5F5FA",
+    textColor: "#0A0A18"
+  },
+  {
+    id: "olivo",
+    name: "Olive Grove",
+    tag: "Naturaleza / Ecologia",
+    primary:   "#4A5E20",
+    secondary: "#8AAA40",
+    light:     "#F0F4E0",
+    accent:    "#8B4500",
+    accent2:   "#D4B820",
+    pageBg:    "#F8FAF0",
+    textColor: "#1A2008"
+  },
+  {
+    id: "arcoiris",
+    name: "Rainbow",
+    tag: "Inclusion / Diversidad (LGBT+)",
+    primary:   "#6030C8",
+    secondary: "#E84060",
+    light:     "#FFF0FF",
+    accent:    "#20A870",
+    accent2:   "#F8C820",
+    pageBg:    "#FFFAFF",
+    textColor: "#180828",
+    rainbow:   true
+  },
+  {
+    id: "halloween",
+    name: "Halloween",
+    tag: "Octubre / Temporada",
+    primary:   "#D05800",
+    secondary: "#FF8C00",
+    light:     "#1E1010",
+    accent:    "#6A20A8",
+    accent2:   "#F8C820",
+    pageBg:    "#120A08",
+    textColor: "#FFF0D8",
+    dark:      true
+  },
+  {
+    id: "navidad",
+    name: "Christmas",
+    tag: "Diciembre / Fiestas",
+    primary:   "#1E6E2E",
+    secondary: "#C83020",
+    light:     "#F0FBF0",
+    accent:    "#C83020",
+    accent2:   "#F8CC20",
+    pageBg:    "#F8FFF8",
+    textColor: "#0A2010"
+  },
+  {
+    id: "san-valentin",
+    name: "Valentine's Day",
+    tag: "Febrero / Amor",
+    primary:   "#C01848",
+    secondary: "#F06090",
+    light:     "#FFF0F5",
+    accent:    "#9020A8",
+    accent2:   "#FFB8CC",
+    pageBg:    "#FFF8FA",
+    textColor: "#280818"
+  }
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function luma(hex) {
+  var r = parseInt(hex.slice(1,3),16);
+  var g = parseInt(hex.slice(3,5),16);
+  var b = parseInt(hex.slice(5,7),16);
+  return (0.299*r + 0.587*g + 0.114*b) / 255;
+}
+function txtOn(hex) { return luma(hex) > 0.52 ? "rgba(0,0,0,0.7)" : "#fff"; }
+
+// ── Fallback copy (works in VSCode webview) ──────────────────────────
+function copyText(text, btn) {
+  // Try modern API first, fall back to textarea select
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      flashBtn(btn);
+    }).catch(function() {
+      fallbackCopy(text, btn);
+    });
+  } else {
+    fallbackCopy(text, btn);
+  }
+}
+function fallbackCopy(text, btn) {
+  var ta = document.getElementById("copy-buffer");
+  ta.value = text;
+  ta.select();
+  ta.setSelectionRange(0, 99999);
+  try {
+    document.execCommand("copy");
+    flashBtn(btn);
+  } catch(e) {
+    // If all else fails, show the text in the panel (already visible)
+    flashBtn(btn, "See below");
+  }
+}
+function flashBtn(btn, msg) {
+  var orig = btn.textContent;
+  btn.textContent = msg || "Copied!";
+  btn.classList.add("ok");
+  setTimeout(function() {
+    btn.textContent = orig;
+    btn.classList.remove("ok");
+  }, 2200);
+}
+
+// ── Build CSS string for a palette ────────────────────────────────────
+function buildCSS(p) {
+  return [
+    ".topic-" + p.id + " {",
+    "  --topic-primary:   " + p.primary   + ";",
+    "  --topic-secondary: " + p.secondary + ";",
+    "  --topic-light:     " + p.light     + ";",
+    "  --topic-accent:    " + p.accent    + ";",
+    "  --topic-accent2:   " + p.accent2   + ";",
+    "}"
+  ].join("\n");
+}
+
+// ── Build card element ────────────────────────────────────────────────
+function buildCard(p) {
+  var card = document.createElement("div");
+  card.className = "card";
+
+  /* ─ Rainbow special swatches ─ */
+  var swatches;
+  if (p.rainbow) {
+    swatches = [
+      {c:"#E84060", l:"Red"},
+      {c:"#F88020", l:"Orange"},
+      {c:"#F8C820", l:"Yellow"},
+      {c:"#20A870", l:"Green"},
+      {c:"#2070E8", l:"Blue"},
+      {c:"#6030C8", l:"Violet"}
+    ];
+  } else {
+    swatches = [
+      {c: p.primary,   l: "Primary"},
+      {c: p.secondary, l: "Secondary"},
+      {c: p.light,     l: "Light"},
+      {c: p.accent,    l: "Accent"},
+      {c: p.accent2,   l: "Accent 2"}
+    ];
+  }
+
+  /* ─ Preview stripe colours ─ */
+  var stripeA = p.rainbow ? "rgba(104,48,200,.18)" : (p.primary + "28");
+  var stripeB = p.dark ? "rgba(255,255,255,.07)" : "rgba(0,0,0,.06)";
+  var stripeC = p.rainbow ? "rgba(232,64,96,.22)" : (p.secondary + "44");
+  var footerBg = p.rainbow ? "" : p.primary;
+  var numBg    = p.rainbow ? "rgba(255,255,255,.25)" : "rgba(0,0,0,.22)";
+
+  /* ─ Build HTML string ─ */
+  var html = "";
+
+  // Selected badge
+  html += '<div class="selected-pill">&#10003; Selected</div>';
+
+  // Preview
+  html += '<div class="preview" title="Click to toggle CSS variables">';
+  html += '<div class="preview-page" style="background:' + p.pageBg + '">';
+  // Outer border
+  if (p.rainbow) {
+    html += '<div class="preview-outer-border" style="border-image:linear-gradient(135deg,#E84060,#F88020,#F8C820,#20A870,#2070E8,#6030C8) 1;border-style:solid"></div>';
+  } else {
+    html += '<div class="preview-outer-border" style="border-color:' + p.primary + '"></div>';
+  }
+  // Inner border
+  html += '<div class="preview-inner-border" style="border-color:' + p.secondary + '"></div>';
+  // Corner stars
+  html += '<span class="corner tl" style="color:' + p.primary + '">&#10038;</span>';
+  html += '<span class="corner tr" style="color:' + p.primary + '">&#10038;</span>';
+  html += '<span class="corner bl" style="color:' + p.primary + '">&#10038;</span>';
+  html += '<span class="corner br" style="color:' + p.primary + '">&#10038;</span>';
+  // Content
+  html += '<div class="preview-content">';
+  html += '<div class="preview-headline" style="color:' + p.textColor + '">' + p.name + '</div>';
+  html += '<div class="preview-stripe bl" style="background:' + stripeA + ';border-left:3px solid ' + p.primary + '"></div>';
+  html += '<div class="preview-stripe bm" style="background:' + stripeB + '"></div>';
+  html += '<div class="preview-stripe bs" style="background:' + stripeC + ';border-radius:6px"></div>';
+  html += '</div>';
+  // Footer bar
+  html += '<div class="preview-footer-bar' + (p.rainbow ? ' rainbow-bg' : '') + '"' + (p.rainbow ? '' : ' style="background:' + footerBg + '"') + '>';
+  html += '<div class="preview-page-num" style="background:' + numBg + '">1</div>';
+  html += '</div>';
+  html += '</div></div>'; // end preview-page / preview
+
+  // Swatch bar
+  html += '<div class="swatches">';
+  for (var s = 0; s < swatches.length; s++) {
+    var sw = swatches[s];
+    html += '<div class="swatch" style="background:' + sw.c + '" title="' + sw.l + ': ' + sw.c + '">';
+    html += '<span class="swatch-tip" style="color:' + txtOn(sw.c) + '">' + sw.c + '</span>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Card footer
+  html += '<div class="card-footer">';
+  html += '<div><div class="theme-name">' + p.name + '</div><div class="theme-tag">' + p.tag + '</div></div>';
+  html += '<button class="copy-btn">Copy CSS</button>';
+  html += '</div>';
+
+  // CSS vars panel
+  var vars = [
+    {k:"--topic-primary",   v:p.primary},
+    {k:"--topic-secondary", v:p.secondary},
+    {k:"--topic-light",     v:p.light},
+    {k:"--topic-accent",    v:p.accent},
+    {k:"--topic-accent2",   v:p.accent2}
+  ];
+  html += '<div class="vars-panel"><div class="vars-inner">';
+  for (var v = 0; v < vars.length; v++) {
+    html += '<div class="var-row">';
+    html += '<div class="var-dot" style="background:' + vars[v].v + '"></div>';
+    html += '<span class="var-key">' + vars[v].k + '</span>';
+    html += '<span class="var-colon">:</span>';
+    html += '<span class="var-val">' + vars[v].v + '</span>';
+    html += '</div>';
+  }
+  html += '</div></div>';
+
+  card.innerHTML = html;
+
+  // ── Events ──────────────────────────────────────────────────────────
+  // Toggle vars panel on preview click
+  card.querySelector(".preview").addEventListener("click", function() {
+    card.classList.toggle("open");
+  });
+
+  // Select card on name click
+  card.querySelector(".theme-name").addEventListener("click", function() {
+    document.querySelectorAll(".card").forEach(function(c) { c.classList.remove("selected"); });
+    card.classList.add("selected");
+    if (!card.classList.contains("open")) card.classList.add("open");
+  });
+
+  // Copy CSS on button click
+  card.querySelector(".copy-btn").addEventListener("click", function(e) {
+    e.stopPropagation();
+    copyText(buildCSS(p), e.target);
+  });
+
+  return card;
+}
+
+// ── Render ────────────────────────────────────────────────────────────
+var grid = document.getElementById("grid");
+for (var i = 0; i < PALETTES.length; i++) {
+  grid.appendChild(buildCard(PALETTES[i]));
+}
+</script>
+</body>
+</html>

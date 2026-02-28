@@ -12,6 +12,21 @@ import os
 import sys
 from dotenv import load_dotenv
 
+# Load environment BEFORE importing agent modules — ensures API keys are set
+load_dotenv()
+
+# Fix Windows console encoding for emoji/unicode in print() statements
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 from agents.greet_agent import create_greet_agent, get_book_request
 from agents.curriculum_agent import create_curriculum_agent, generate_curriculum
 from agents.chapter_agent import create_chapter_agent, generate_chapter
@@ -19,16 +34,26 @@ from agents.qwen_image_agent import generate_image_with_qwen
 from config import validate_api_keys
 
 # Configure OpenTelemetry tracing for AI Toolkit integration
-try:
-    from agent_framework.observability import configure_otel_providers
-    configure_otel_providers(
-        vs_code_extension_port=4317,  # AI Toolkit gRPC port
-        enable_sensitive_data=True     # Capture prompts and completions for debugging
-    )
-except ImportError:
-    print("Warning: agent_framework not found. Tracing will be disabled.", file=sys.stderr)
+# Suppress noisy OTLP exporter errors when no local collector is running
+import logging as _logging
+for _otlp_logger_name in (
+    "opentelemetry.exporter.otlp.proto.grpc.exporter",
+    "opentelemetry.exporter.otlp.proto.grpc",
+    "opentelemetry.exporter.otlp",
+):
+    _logging.getLogger(_otlp_logger_name).setLevel(_logging.CRITICAL)
 
-load_dotenv()
+_tracing_enabled = os.getenv("AITK_TRACING_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+if _tracing_enabled:
+    try:
+        from agent_framework.observability import configure_otel_providers
+        configure_otel_providers(
+            vs_code_extension_port=4317,  # AI Toolkit gRPC port
+            enable_sensitive_data=True     # Capture prompts and completions for debugging
+        )
+        print("✅ AI Toolkit tracing enabled (AITK_TRACING_ENABLED=1)")
+    except Exception as e:
+        print(f"Warning: tracing disabled due to setup/runtime error: {e}", file=sys.stderr)
 
 
 async def main():

@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Storybook Template</title>
+<style>
+:root {
+  --ink      : #1A1815;
+  --ink-mid  : #333028;
+  --ink-light: #888070;
+  --rule     : #E8E4DE;
+  --page-bg  : #FFFFFF;
+  --page-w   : 680px;
+  --pad-x    : 68px;
+  --pad-top  : 58px;
+  --pad-bot  : 80px;
+  --f-display: Georgia, 'Times New Roman', serif;
+  --f-body   : Georgia, 'Times New Roman', serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; background: #B8B4AE; }
+
+body {
+  background: #B8B4AE;
+  color: var(--ink);
+  padding: 40px 16px 80px;
+  font-family: var(--f-body);
+}
+
+/* ═══════════════════════════════════════
+   COVER
+═══════════════════════════════════════ */
+.book-cover {
+  width: var(--page-w);
+  max-width: 100%;
+  margin: 0 auto 20px;
+  background: var(--page-bg);
+  min-height: 900px;
+  box-shadow: -7px 0 0 rgba(0,0,0,.2), 0 4px 24px rgba(0,0,0,.15);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 72px var(--pad-x);
+  position: relative;
+}
+
+.cover-grade {
+  position: absolute;
+  top: 28px; right: 28px;
+  font-size: .62rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+}
+
+.cover-stars {
+  font-size: .9rem;
+  letter-spacing: .4em;
+  color: var(--ink-light);
+  margin-bottom: 44px;
+  opacity: .5;
+}
+
+.cover-eyebrow {
+  font-size: .65rem;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  margin-bottom: 16px;
+}
+
+.cover-title {
+  font-family: var(--f-display);
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-bottom: 20px;
+}
+
+.cover-line {
+  width: 40px; height: 1px;
+  background: var(--ink-light);
+  margin: 0 auto 20px;
+  opacity: .5;
+}
+
+.cover-desc {
+  font-size: .95rem;
+  line-height: 1.78;
+  color: var(--ink-mid);
+  font-style: italic;
+  max-width: 380px;
+}
+
+.cover-meta {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding: 16px var(--pad-x) 36px;
+  border-top: 1px solid var(--rule);
+}
+.cover-meta-item {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.cover-meta-item span {
+  font-size: .56rem; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--ink-light);
+}
+.cover-meta-item strong {
+  font-size: .78rem; color: var(--ink); font-weight: 600;
+}
+
+/* ═══════════════════════════════════════
+   PAGE
+═══════════════════════════════════════ */
+.book-page {
+  width: var(--page-w);
+  max-width: 100%;
+  margin: 0 auto 20px;
+  background: var(--page-bg);
+  box-shadow: -7px 0 0 rgba(0,0,0,.18), 0 3px 18px rgba(0,0,0,.12);
+  min-height: 900px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.page-body {
+  flex: 1;
+  padding: var(--pad-top) var(--pad-x) var(--pad-bot);
+}
+
+.page-footer {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--pad-x);
+  border-top: 1px solid var(--rule);
+}
+.pf-side {
+  font-size: .62rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  font-style: italic;
+  flex: 1;
+}
+.pf-side.right { text-align: right; }
+.pf-num {
+  font-family: var(--f-display);
+  font-size: .9rem;
+  font-style: italic;
+  color: var(--ink-light);
+  text-align: center;
+  flex: 0 0 40px;
+}
+
+/* ═══════════════════════════════════════
+   TOC
+═══════════════════════════════════════ */
+.toc-eyebrow {
+  font-size: .62rem; letter-spacing: .26em;
+  text-transform: uppercase; color: var(--ink-light);
+  margin-bottom: 8px; text-align: center;
+}
+.toc-title {
+  font-family: var(--f-display);
+  font-size: 1.8rem; font-weight: 700;
+  color: var(--ink); text-align: center;
+  margin-bottom: 36px;
+}
+.toc-list { list-style: none; }
+.toc-row {
+  display: flex; align-items: baseline;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.toc-row:last-child { border-bottom: none; }
+.toc-num {
+  font-family: var(--f-display);
+  font-size: 1.5rem; font-style: italic;
+  color: #D8D2C8; min-width: 42px; flex-shrink: 0;
+  line-height: 1;
+}
+.toc-info { flex: 1; padding: 0 8px; }
+.toc-ch-name {
+  font-family: var(--f-display);
+  font-size: .98rem; font-weight: 700; color: var(--ink);
+}
+.toc-ch-sum {
+  font-size: .78rem; font-style: italic;
+  color: var(--ink-light); margin-top: 3px; line-height: 1.5;
+}
+.toc-dots {
+  flex: 1; min-width: 20px;
+  border-bottom: 1px dotted #D8D4CC;
+  margin: 0 8px; align-self: flex-end; margin-bottom: 4px;
+}
+.toc-pnum {
+  font-family: var(--f-display); font-size: .88rem;
+  font-style: italic; color: var(--ink-light);
+  min-width: 16px; text-align: right;
+}
+
+/* ═══════════════════════════════════════
+   CHAPTER HEADER
+═══════════════════════════════════════ */
+.ch-header {
+  text-align: center;
+  margin-bottom: 40px;
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--rule);
+}
+.ch-eyebrow {
+  font-size: .62rem; letter-spacing: .3em;
+  text-transform: uppercase; color: var(--ink-light);
+  margin-bottom: 10px;
+}
+.ch-big-num {
+  font-family: var(--f-display);
+  font-size: 5rem; font-weight: 700; font-style: italic;
+  color: #ECEAE4; line-height: 1;
+  display: block;
+  margin-bottom: -8px;
+  user-select: none;
+}
+.ch-title {
+  font-family: var(--f-display);
+  font-size: clamp(1.7rem, 3.5vw, 2.4rem);
+  font-weight: 700; line-height: 1.15;
+  color: var(--ink);
+  margin-bottom: 22px;
+}
+.ch-quote-text {
+  font-size: .88rem; font-style: italic;
+  color: var(--ink-mid); line-height: 1.65;
+  max-width: 340px; margin: 0 auto 8px;
+  font-weight: 600;
+}
+.ch-quote-attr {
+  font-size: .72rem; color: var(--ink-light);
+}
+.ch-deco {
+  width: 36px; height: 1px;
+  background: var(--ink-light); opacity: .4;
+  margin: 22px auto 0;
+}
+
+/* ═══════════════════════════════════════
+   BODY TEXT
+═══════════════════════════════════════ */
+.story-text {
+  font-size: .94rem;
+  line-height: 1.88;
+  color: var(--ink-mid);
+  margin-bottom: 18px;
+  text-align: justify;
+  hyphens: auto;
+}
+
+.story-text.drop-cap::first-letter {
+  font-family: var(--f-display);
+  font-size: 4rem; font-weight: 700;
+  line-height: .78;
+  float: left;
+  margin: 5px 7px -2px 0;
+  color: var(--ink);
+}
+
+.story-text.indent { text-indent: 1.5em; }
+
+/* ═══════════════════════════════════════
+   IMAGES — Qwen aspect ratios
+═══════════════════════════════════════ */
+.img-wrap {
+  margin: 28px 0;
+  clear: both;
+}
+.img-wrap.float-left {
+  float: left;
+  margin: 4px 22px 14px 0;
+  clear: none;
+}
+.img-wrap.float-right {
+  float: right;
+  margin: 4px 0 14px 22px;
+  clear: none;
+}
+
+.img-wrap.float-left  .img-box,
+.img-wrap.float-right .img-box {
+  width: 200px;
+}
+
+.img-box {
+  background: #FFFFFF;
+  border: 1px solid #F0ECE8;
+  overflow: hidden;
+  width: 100%;
+  position: relative;
+}
+
+.img-box.ratio-16-9  { aspect-ratio: 1664 / 928;  }
+.img-box.ratio-4-3   { aspect-ratio: 1472 / 1104; }
+.img-box.ratio-1-1   { aspect-ratio: 1 / 1;        }
+.img-box.ratio-3-4   { aspect-ratio: 1104 / 1472; }
+.img-box.ratio-9-16  { aspect-ratio: 928  / 1664; }
+
+.img-wrap.float-left  .img-box,
+.img-wrap.float-right .img-box { aspect-ratio: 3 / 4; }
+
+.img-box img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; display: block;
+}
+
+.img-ph-label {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 6px;
+  pointer-events: none;
+}
+.img-ph-label span {
+  font-size: .6rem; letter-spacing: .12em;
+  text-transform: uppercase; color: #DDDDDD;
+  text-align: center; padding: 0 12px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.img-caption {
+  font-size: .7rem; font-style: italic;
+  color: var(--ink-light); text-align: center;
+  margin-top: 7px; line-height: 1.45;
+}
+
+.clearfix::after { content: ''; display: table; clear: both; }
+
+/* ═══════════════════════════════════════
+   CHECKLIST
+═══════════════════════════════════════ */
+.checklist {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+}
+.checklist li {
+  font-size: .9rem; color: var(--ink-mid);
+  padding: 7px 0 7px 28px;
+  position: relative;
+  border-bottom: 1px solid var(--rule);
+  line-height: 1.5;
+}
+.checklist li:first-child { border-top: 1px solid var(--rule); }
+.checklist li::before {
+  content: '\2610';
+  position: absolute; left: 2px;
+  font-size: .8rem; color: var(--ink-light);
+}
+
+/* ═══════════════════════════════════════
+   MISC BLOCKS
+═══════════════════════════════════════ */
+.blk-label {
+  font-size: .58rem; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-light);
+  margin-bottom: 5px;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+.blk-concept   { border-top: 1px solid var(--rule); padding: 14px 0; margin: 14px 0; }
+.blk-example   { padding: 10px 0 10px 18px; border-left: 2px solid #E0DEDA; margin: 14px 0; }
+.blk-challenge { border: 1px solid #D8D4CC; padding: 14px 16px; margin: 18px 0; }
+.blk-fact      { border-top: 1px solid var(--ink-mid); border-bottom: 1px solid var(--rule); padding: 12px 0; margin: 16px 0; display: flex; gap: 10px; }
+.blk-question  { display: flex; gap: 8px; padding: 10px 0; border-bottom: 1px dotted #E0DEDA; margin: 12px 0; }
+.blk-q-dot     { font-style: italic; font-weight: 700; font-size: 1rem; color: var(--ink-light); flex-shrink: 0; padding-top: 2px; }
+.blk-heading   { margin: 26px 0 10px; border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+.blk-heading h2 { font-family: var(--f-display); font-size: 1.1rem; font-weight: 700; color: var(--ink); }
+.blk-list      { list-style: none; margin: 6px 0; padding: 0; }
+.blk-list li   { font-size: .9rem; line-height: 1.7; color: var(--ink-mid); padding: 2px 0 2px 18px; position: relative; }
+.blk-list li::before { content: '\2014'; position: absolute; left: 0; color: var(--ink-light); }
+.blk-concept p, .blk-example p, .blk-challenge p, .blk-fact p, .blk-question p {
+  font-size: .9rem; line-height: 1.75; color: var(--ink-mid); margin: 0 0 5px;
+}
+.write-lines { margin: 12px 0; }
+.write-line  { border-bottom: 1px solid #E0DEDA; height: 30px; }
+.divider     { border: none; border-top: 1px dotted #E0DEDA; margin: 18px 0; }
+
+/* ═══════════════════════════════════════
+   PRINT & RESPONSIVE
+═══════════════════════════════════════ */
+@media print {
+  html, body { background: white; padding: 0; }
+  .book-cover, .book-page {
+    box-shadow: none; page-break-after: always;
+    margin: 0; width: 100%;
+  }
+  .book-page { min-height: auto; }
+}
+@media (max-width: 720px) {
+  :root { --page-w: 100%; --pad-x: 26px; --pad-top: 36px; }
+  .img-wrap.float-left, .img-wrap.float-right {
+    float: none; margin: 20px 0;
+  }
+  .img-wrap.float-left  .img-box,
+  .img-wrap.float-right .img-box { width: 100%; aspect-ratio: 4/3; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   BOOK DATA
+   ─────────────────────────────────────────────────────────────────
+   IMAGE block:
+   {
+     type    : "image",
+     ratio   : "16-9" | "4-3" | "1-1" | "3-4" | "9-16",
+     float   : "left" | "right" | null,
+     url     : "https://...",    <- leave null for blank placeholder
+     alt     : "Scene description",
+     caption : "Optional caption below image"
+   }
+
+   TEXT block:
+   {
+     type     : "text",
+     text     : "Paragraph content.",
+     drop_cap : true,    <- large decorative first letter
+     indent   : true     <- paragraph indent (use for continuation)
+   }
+═══════════════════════════════════════════════════════════════════ */
+var BOOK = {
+  i18n: {
+    index         : "Table of Contents",
+    book_contents : "Contents",
+    country       : "Country",
+    method        : "Method",
+    chapters_label: "Chapters",
+    language_label: "Language",
+    years_old     : "years old",
+    chapter       : "Chapter",
+    ch_abbr       : "Ch.",
+    grade_primary  : "Primary",
+    grade_secondary: "Secondary",
+    grade_high     : "High School"
+  },
+  request: {
+    topic   : "Adventure Stories",
+    age     : 10,
+    country : "Mexico",
+    method  : "Narrative",
+    language: "English",
+    chapters: 2
+  },
+  title      : "The Stars Within",
+  description: "A story about courage, dreams, and the magic that lives inside every child.",
+  toc: [
+    { title: "You Are a Masterpiece",       summary: "Discovering the gifts you were born with." },
+    { title: "Turning Dreams into Actions", summary: "How big dreams become real when you believe." }
+  ],
+  chapters: [
+    {
+      title     : "You Are a Masterpiece",
+      ch_num    : 1,
+      quote     : "Every child is an artist. The problem is how to remain an artist once we grow up.",
+      quote_attr: "— Pablo Picasso",
+      blocks: [
+        { type: "image", ratio: "9-16",  float: "right", url: null, alt: "A child standing in front of a mountain of wrapped gifts", caption: "" },
+        { type: "text",  drop_cap: true, text: "What is a masterpiece? It can be a piece of art, a jaw-dropping building or some other creation so marvelous that people will travel all over the world just to see it. A masterpiece is amazing, valuable, rare, special and treasured — just like you!" },
+        { type: "text",  indent: true,   text: "It is truly one of a kind. That is why you are a masterpiece! There is only one of you and there will only ever be one of you." },
+        { type: "text",  indent: true,   text: "From the beautifully colored hair on your head to the shape of your toes, you are unique. All your features including your skin color, eye shape and even the sound of your laugh make you different from everyone else who has ever lived." },
+        { type: "image", ratio: "16-9",  float: null, url: null, alt: "A wide magical forest at sunrise", caption: "The world is full of wonders waiting to be discovered." },
+        { type: "text",  indent: true,   text: "God loves you so much that he also gave you gifts the moment you were born. These gifts can't always be seen with the eyes, but they are always with you. For instance, think of a kid in class who is gifted at math. While the whole class might be trying to add basic numbers, she may be working on double-digit multiplication." },
+        { type: "text",  indent: true,   text: "Other kids are gifted athletes and can catch a ball practically blindfolded! You may find your gifts in any area of your life. You may find it easy to name what your gifts are, or you might have to think hard or try out new things to discover them." }
+      ]
+    },
+    {
+      title     : "Turning Dreams into Actions",
+      ch_num    : 2,
+      quote     : "Nothing is impossible. The word itself says \"I'm possible!\"",
+      quote_attr: "— Audrey Hepburn",
+      blocks: [
+        { type: "checklist", items: ["Know clearly what your dream is.", "Do your research about it!", "Form a plan of how you can achieve it.", "Be willing to be vocal and stand up for your dream."] },
+        { type: "text", indent: true, text: "Of course, there are specific strategies to each of these ideas, and we'll talk about them over the course of this book. But if I've learned one thing through my experiences, it is that having and reaching for a dream can be incredibly powerful." },
+        { type: "text", indent: true, text: "Finding your dreams and having the knowledge and skills to act on them gives you the ability to garner support from those around you, plan for your future, and cultivate bravery in the face of uncertainty. You can change the world, and you don't have to wait to start doing it." },
+        { type: "image", ratio: "3-4",  float: "left", url: null, alt: "A kid holding a basketball above their head", caption: "" },
+        { type: "text", indent: true, text: "This book will expose you to the lessons I've learned about finding and achieving dreams and guide you through a series of interactive, self-reflective activities designed to help you find your dreams, grow your confidence, and learn the skills necessary to chase after success." },
+        { type: "text", indent: true, text: "Join me as I show you step by step how I pursued my goals and dreams and how you can too. Let's get going and start dreaming big!" },
+        { type: "image", ratio: "16-9", float: null, url: null, alt: "A night sky full of stars seen from a meadow", caption: "The stars are not just above us — they live inside us too." },
+        { type: "text", drop_cap: true, text: "One of my earliest memories is of looking up at the night sky and dreaming about the stars. I must have been about four or five years old, and I remember wondering how many of them there were." },
+        { type: "text", indent: true,   text: "I've known for as long as I can remember that I wanted to become an astronaut. That was my dream: to head toward the stars, walk in space, and see those glowing balls of gas and plasma unfiltered by our planet's atmosphere." },
+        { type: "image", ratio: "4-3",  float: null, url: null, alt: "A telescope pointed at the Milky Way from a hilltop", caption: "Every great journey begins with looking up." }
+      ]
+    }
+  ]
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════════════════ */
+var I = BOOK.i18n;
+
+function esc(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function gradeLabel(age) {
+  if (age <= 11) return Math.max(1, age - 5) + "\xb0 " + I.grade_primary;
+  if (age <= 14) return (age - 11) + "\xb0 " + I.grade_secondary;
+  return Math.min(3, age - 14) + "\xb0 " + I.grade_high;
+}
+
+function shortT(t, n) { return t.length > n ? t.slice(0, n) + "\u2026" : t; }
+
+var RATIO_LABEL = {
+  "16-9": "16:9 \u2014 1664\xd7928",
+  "4-3" : "4:3 \u2014 1472\xd71104",
+  "1-1" : "1:1 \u2014 1328\xd71328",
+  "3-4" : "3:4 \u2014 1104\xd71472",
+  "9-16": "9:16 \u2014 928\xd71664"
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   RENDERERS
+═══════════════════════════════════════════════════════════════════ */
+
+function renderImage(b) {
+  var ratio  = b.ratio || "16-9";
+  var floatC = b.float ? " float-" + b.float : "";
+  var inside = b.url
+    ? '<img src="' + esc(b.url) + '" alt="' + esc(b.alt) + '" loading="lazy">'
+    : '<div class="img-ph-label"><span>' + esc(RATIO_LABEL[ratio] || ratio) + '</span></div>';
+  var cap = b.caption
+    ? '<div class="img-caption">' + esc(b.caption) + '</div>'
+    : '';
+  return '<div class="img-wrap' + floatC + '">'
+    + '<div class="img-box ratio-' + ratio + '">' + inside + '</div>'
+    + cap + '</div>';
+}
+
+function renderBlock(b) {
+  switch (b.type) {
+
+    case "text": {
+      var cls = "story-text";
+      if (b.drop_cap) cls += " drop-cap";
+      else if (b.indent) cls += " indent";
+      return '<div class="clearfix"><p class="' + cls + '">' + esc(b.text) + '</p></div>';
+    }
+
+    case "image":
+      return renderImage(b);
+
+    case "checklist": {
+      var items = (b.items || []).map(function(it) {
+        return '<li>' + esc(it) + '</li>';
+      }).join("");
+      return '<ul class="checklist">' + items + '</ul>';
+    }
+
+    case "heading":
+      return '<div class="blk-heading"><h2>' + esc(b.text) + '</h2></div>';
+
+    case "concept":
+      return '<div class="blk-concept"><div class="blk-label">' + esc(b.label) + '</div><p>' + esc(b.text) + '</p></div>';
+
+    case "example":
+      return '<div class="blk-example"><div class="blk-label">' + esc(b.label) + '</div><p>' + esc(b.text) + '</p></div>';
+
+    case "challenge":
+      return '<div class="blk-challenge"><div class="blk-label">' + esc(b.label) + '</div><p>' + esc(b.text) + '</p></div>';
+
+    case "fact":
+      return '<div class="blk-fact"><div style="flex-shrink:0;color:var(--ink-light);">&#9702;</div><div><div class="blk-label">' + esc(b.label) + '</div><p>' + esc(b.text) + '</p></div></div>';
+
+    case "question":
+      return '<div class="blk-question"><div class="blk-q-dot">?</div><p class="story-text" style="margin:0;text-indent:0;">' + esc(b.text) + '</p></div>';
+
+    case "write_lines": {
+      var ln = "";
+      for (var i = 0; i < (b.lines || 3); i++) ln += '<div class="write-line"></div>';
+      return '<div class="write-lines">' + ln + '</div>';
+    }
+
+    case "divider":
+      return '<hr class="divider">';
+
+    default:
+      return "";
+  }
+}
+
+function footer(num, left, right) {
+  return '<div class="page-footer">'
+    + '<span class="pf-side">'       + esc(left)  + '</span>'
+    + '<span class="pf-num">'        + esc(num)   + '</span>'
+    + '<span class="pf-side right">' + esc(right) + '</span>'
+    + '</div>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PAGE BUILDERS
+═══════════════════════════════════════════════════════════════════ */
+
+function buildCover(d) {
+  var grade = gradeLabel(d.request.age);
+  var metas = [
+    [I.country,         d.request.country],
+    [I.method,          d.request.method],
+    [I.chapters_label,  String(d.chapters.length)],
+    [I.language_label,  d.request.language]
+  ].map(function(p) {
+    return '<div class="cover-meta-item"><span>' + esc(p[0]) + '</span><strong>' + esc(p[1]) + '</strong></div>';
+  }).join("");
+
+  return '<div class="book-cover">'
+    + '<div class="cover-grade">' + esc(grade) + ' &middot; ' + d.request.age + ' ' + esc(I.years_old) + '</div>'
+    + '<div class="cover-stars">&#10022; &#10022; &#10022;</div>'
+    + '<div class="cover-eyebrow">' + esc(d.request.topic) + '</div>'
+    + '<div class="cover-title">'   + esc(d.title) + '</div>'
+    + '<div class="cover-line"></div>'
+    + '<div class="cover-desc">'    + esc(d.description) + '</div>'
+    + '<div class="cover-meta">'    + metas + '</div>'
+    + '</div>';
+}
+
+function buildTOC(d) {
+  var rows = d.toc.map(function(t, i) {
+    return '<li class="toc-row">'
+      + '<span class="toc-num">' + (i + 1) + '</span>'
+      + '<div class="toc-info"><div class="toc-ch-name">' + esc(t.title) + '</div><div class="toc-ch-sum">' + esc(t.summary) + '</div></div>'
+      + '<span class="toc-dots"></span>'
+      + '<span class="toc-pnum">' + (i + 2) + '</span>'
+      + '</li>';
+  }).join("");
+
+  return '<div class="book-page">'
+    + '<div class="page-body">'
+    + '<div class="toc-eyebrow">' + esc(I.index) + '</div>'
+    + '<div class="toc-title">'   + esc(I.book_contents) + '</div>'
+    + '<ul class="toc-list">' + rows + '</ul>'
+    + '</div>'
+    + footer("i", shortT(d.title, 30), I.index)
+    + '</div>';
+}
+
+function buildChapter(d, ch, idx) {
+  var pNum  = idx + 2;
+  var chNum = ch.ch_num || (idx + 1);
+
+  var quote = "";
+  if (ch.quote) {
+    quote = '<div class="ch-quote-text">' + esc(ch.quote) + '</div>';
+    if (ch.quote_attr) quote += '<div class="ch-quote-attr">' + esc(ch.quote_attr) + '</div>';
+  }
+
+  var blocks = (ch.blocks || []).map(renderBlock).join("\n");
+
+  return '<div class="book-page">'
+    + '<div class="page-body">'
+    + '<div class="ch-header">'
+    + '<div class="ch-eyebrow">' + esc(I.chapter) + ' ' + chNum + '</div>'
+    + '<span class="ch-big-num">' + chNum + '</span>'
+    + '<h2 class="ch-title">' + esc(ch.title) + '</h2>'
+    + quote
+    + '<div class="ch-deco"></div>'
+    + '</div>'
+    + blocks
+    + '</div>'
+    + footer(pNum, shortT(d.title, 28), I.ch_abbr + " " + chNum)
+    + '</div>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════════════════════ */
+function render(d) {
+  var html = buildCover(d) + buildTOC(d);
+  d.chapters.forEach(function(ch, i) { html += buildChapter(d, ch, i); });
+  document.getElementById("app").innerHTML = html;
+}
+
+render(BOOK);
+</script>
+</body>
+</html>
