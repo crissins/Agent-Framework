@@ -65,8 +65,8 @@ for _otlp_logger_name in (
 
 # ── Audio / TTS diagnostic logging ────────────────────────────────────────
 # Ensure TTS-related loggers output to console so audio issues are visible
-_audio_log_level = _logging.DEBUG if os.getenv("TTS_DEBUG", "1") == "1" else _logging.INFO
-_console_handler = _logging.StreamHandler(sys.stdout)0
+_audio_log_level = _logging.DEBUG if os.getenv("TTS_DEBUG", "0") == "1" else _logging.INFO
+_console_handler = _logging.StreamHandler(sys.stdout)
 _console_handler.setFormatter(_logging.Formatter(
     "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 ))
@@ -164,16 +164,23 @@ VOICE_REGISTRY_PATH = VOICE_CLONE_DIR / "voice_registry.json"
 _DOTENV_PATH = Path(__file__).parent / ".env"
 
 
-def _save_dotenv(github_token: str, dashscope_key: str, dashscope_region: str) -> str:
-    """Write/update GITHUB_TOKEN, DASHSCOPE_API_KEY, and DASHSCOPE_REGION in .env.
-    Existing unrelated lines are preserved.
-    Returns a status message.
-    """
-    managed_keys = {"GITHUB_TOKEN", "DASHSCOPE_API_KEY", "DASHSCOPE_REGION"}
+def _save_dotenv(github_token: str, dashscope_key: str, dashscope_region: str,
+                 anthropic_key: str = "", azure_key: str = "",
+                 azure_endpoint: str = "", azure_deployment: str = "") -> str:
+    """Write/update provider keys in .env. Existing unrelated lines are preserved."""
+    managed_keys = {
+        "GITHUB_TOKEN", "DASHSCOPE_API_KEY", "DASHSCOPE_REGION",
+        "ANTHROPIC_API_KEY",
+        "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT_NAME",
+    }
     new_values = {
         "GITHUB_TOKEN": github_token.strip(),
         "DASHSCOPE_API_KEY": dashscope_key.strip(),
         "DASHSCOPE_REGION": dashscope_region.strip(),
+        "ANTHROPIC_API_KEY": anthropic_key.strip(),
+        "AZURE_OPENAI_API_KEY": azure_key.strip(),
+        "AZURE_OPENAI_ENDPOINT": azure_endpoint.strip(),
+        "AZURE_OPENAI_DEPLOYMENT_NAME": azure_deployment.strip(),
     }
 
     existing_lines: list[str] = []
@@ -352,6 +359,7 @@ def _resolve_runtime_options(parsed_chat_data: dict | None, defaults: dict) -> d
 
     provider = str(parsed_chat_data.get("model_provider", "github")).strip().lower()
     resolved["use_qwen_models"] = provider == "qwen"
+    os.environ["MODEL_PROVIDER"] = provider
 
     parsed_text_model = parsed_chat_data.get("text_model")
     if parsed_text_model:
@@ -426,35 +434,93 @@ with st.sidebar:
 
     # ── Model Settings ──────────────────────────────────────────────────
     with st.expander("🧠 Model", expanded=False):
-        # Pre-populate from environment (covers both .env file and prior UI entry)
-        _env_github  = os.getenv("GITHUB_TOKEN", "")
-        _env_dash    = os.getenv("DASHSCOPE_API_KEY", "")
-        _env_region  = os.getenv("DASHSCOPE_REGION", "singapore")
-        if _env_github  and not st.session_state.get("ui_github_token"):
-            st.session_state["ui_github_token"] = _env_github
-        if _env_dash    and not st.session_state.get("ui_dashscope_api_key"):
-            st.session_state["ui_dashscope_api_key"] = _env_dash
+        # Read keys from environment (.env loaded at startup)
+        _env_github    = os.getenv("GITHUB_TOKEN", "")
+        _env_dash      = os.getenv("DASHSCOPE_API_KEY", "")
+        _env_anthropic = os.getenv("ANTHROPIC_API_KEY", "")
+        _env_azure_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+        _env_azure_ep  = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+        _env_azure_dep = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "")
+        _env_region    = os.getenv("DASHSCOPE_REGION", "singapore")
 
-        github_token_input = st.text_input(
-            "🔑 GitHub Models API Key",
-            value=st.session_state.get("ui_github_token", ""),
-            type="password",
-            help="Used when GitHub Models is selected (GITHUB_TOKEN).",
-            key="ui_github_token_input",
+        # ── Helper: render a key row (present banner OR input field) ──
+        def _key_row(label: str, env_value: str, env_var: str, input_key: str, help_text: str):
+            """Show ✅ banner if key already present, otherwise show password input."""
+            if env_value:
+                st.success(f"✅ {label} present")
+                return env_value
+            new_val = st.text_input(
+                f"🔑 {label}",
+                value="",
+                type="password",
+                help=help_text,
+                key=input_key,
+                placeholder=f"Paste your {env_var} here",
+            )
+            if new_val and new_val.strip():
+                os.environ[env_var] = new_val.strip()
+                return new_val.strip()
+            return ""
+
+        _github_key = _key_row(
+            label="GitHub Models API Key",
+            env_value=_env_github,
+            env_var="GITHUB_TOKEN",
+            input_key="ui_github_token_input",
+            help_text="Personal Access Token for GitHub Models (GITHUB_TOKEN).",
         )
-        dashscope_api_input = st.text_input(
-            "🔑 DashScope API Key",
-            value=st.session_state.get("ui_dashscope_api_key", ""),
-            type="password",
-            help="Used for Qwen text/image and voice generation (DASHSCOPE_API_KEY).",
-            key="ui_dashscope_api_input",
+
+        _dash_key = _key_row(
+            label="DashScope API Key",
+            env_value=_env_dash,
+            env_var="DASHSCOPE_API_KEY",
+            input_key="ui_dashscope_api_input",
+            help_text="DashScope key for Qwen text/image/voice (DASHSCOPE_API_KEY).",
         )
-        if github_token_input and github_token_input.strip():
-            st.session_state["ui_github_token"] = github_token_input.strip()
-            os.environ["GITHUB_TOKEN"] = github_token_input.strip()
-        if dashscope_api_input and dashscope_api_input.strip():
-            st.session_state["ui_dashscope_api_key"] = dashscope_api_input.strip()
-            os.environ["DASHSCOPE_API_KEY"] = dashscope_api_input.strip()
+
+        _anthropic_key = _key_row(
+            label="Anthropic API Key",
+            env_value=_env_anthropic,
+            env_var="ANTHROPIC_API_KEY",
+            input_key="ui_anthropic_key_input",
+            help_text="Anthropic key for Claude models (ANTHROPIC_API_KEY).",
+        )
+
+        st.markdown("**Azure AI Foundry**")
+        _azure_key = _key_row(
+            label="Azure OpenAI API Key",
+            env_value=_env_azure_key,
+            env_var="AZURE_OPENAI_API_KEY",
+            input_key="ui_azure_key_input",
+            help_text="API key from Azure AI Foundry / Azure OpenAI (AZURE_OPENAI_API_KEY).",
+        )
+        if _env_azure_ep:
+            st.success("\u2705 Azure Endpoint present")
+            _azure_ep = _env_azure_ep
+        else:
+            _azure_ep = st.text_input(
+                "\U0001f310 Azure Endpoint",
+                value="",
+                placeholder="https://your-instance.openai.azure.com/",
+                help="Your Azure OpenAI endpoint URL (AZURE_OPENAI_ENDPOINT).",
+                key="ui_azure_ep_input",
+            )
+            if _azure_ep.strip():
+                os.environ["AZURE_OPENAI_ENDPOINT"] = _azure_ep.strip()
+
+        if _env_azure_dep:
+            st.success(f"\u2705 Azure Deployment: {_env_azure_dep}")
+            _azure_dep = _env_azure_dep
+        else:
+            _azure_dep = st.text_input(
+                "\U0001f4e6 Deployment Name",
+                value="",
+                placeholder="gpt-4o",
+                help="Azure OpenAI deployment name (AZURE_OPENAI_DEPLOYMENT_NAME).",
+                key="ui_azure_dep_input",
+            )
+            if _azure_dep.strip():
+                os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"] = _azure_dep.strip()
 
         _region_options = ["singapore", "beijing", "us-virginia"]
         _region_default = _env_region if _env_region in _region_options else "singapore"
@@ -469,35 +535,99 @@ with st.sidebar:
 
         if st.button("💾 Save to .env", help="Persist keys & region to .env so they load automatically on next start."):
             msg = _save_dotenv(
-                github_token=st.session_state.get("ui_github_token", ""),
-                dashscope_key=st.session_state.get("ui_dashscope_api_key", ""),
+                github_token=_github_key,
+                dashscope_key=_dash_key,
                 dashscope_region=qwen_region,
+                anthropic_key=_anthropic_key,
+                azure_key=_azure_key,
+                azure_endpoint=_azure_ep,
+                azure_deployment=_azure_dep,
             )
             if msg.startswith("✅"):
                 st.success(msg)
             else:
                 st.warning(msg)
 
-        use_qwen_models = st.checkbox(
-            "Use Qwen Models (DashScope)",
-            value=False,
-            help="Toggle between GitHub Models (free/dev) and Qwen (production-ready)",
+        # ── Provider selector ────────────────────────────────────────
+        _provider_options = [
+            ("🐙 GitHub Models",   "github"),
+            ("🟣 Qwen (DashScope)",  "qwen"),
+            ("🔴 Claude (Anthropic)", "claude"),
+            ("🔵 Azure AI Foundry",   "azure"),
+        ]
+        _provider_labels = [p[0] for p in _provider_options]
+        _provider_values = [p[1] for p in _provider_options]
+
+        _current_provider = os.getenv("MODEL_PROVIDER", "github")
+        _provider_default_idx = _provider_values.index(_current_provider) if _current_provider in _provider_values else 0
+
+        _selected_provider_label = st.radio(
+            "🤖 Model Provider",
+            _provider_labels,
+            index=_provider_default_idx,
+            horizontal=True,
         )
-        if use_qwen_models:
+        selected_provider = _provider_values[_provider_labels.index(_selected_provider_label)]
+        os.environ["MODEL_PROVIDER"] = selected_provider
+
+        # Derived bool kept for backward-compat with all downstream code
+        use_qwen_models = selected_provider == "qwen"
+
+        # ── Model selector per provider ──────────────────────────────
+        if selected_provider == "github":
+            qwen_text_model = st.selectbox(
+                "🧠 Text Model",
+                ["gpt-4o-mini", "gpt-4o", "Meta-Llama-3.1-70B-Instruct", "Mistral-large"],
+                index=0,
+                help="gpt-4o-mini is fastest; gpt-4o is highest quality",
+            )
+            qwen_image_model = "qwen-image-plus"
+
+        elif selected_provider == "qwen":
             qwen_text_model = st.selectbox(
                 "🧠 Text Model",
                 ["qwen-flash", "qwen-plus", "qwen-max", "qwen3-max"],
                 index=0,
-                help="qwen-flash is fastest and cheapest; qwen-max is highest quality",
+                help="qwen-flash is fastest; qwen-max is highest quality",
             )
             qwen_image_model = st.selectbox(
                 "🖼️ Image Model",
                 ["qwen-image-plus", "qwen-image-max-2025-12-30", "qwen-image-max", "qwen-image"],
                 index=0,
             )
-        else:
-            qwen_text_model = None
+
+        elif selected_provider == "claude":
+            qwen_text_model = st.selectbox(
+                "🧠 Text Model",
+                [
+                    "claude-3-5-haiku-20241022",
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-7-sonnet-20250219",
+                ],
+                index=0,
+                help="Haiku is fastest; Sonnet 3.7 is highest quality",
+            )
             qwen_image_model = "qwen-image-plus"
+
+        else:  # azure
+            _az_dep_default = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
+            _az_choices = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-35-turbo"]
+            if _az_dep_default not in _az_choices:
+                _az_choices.insert(0, _az_dep_default)
+            qwen_text_model = st.selectbox(
+                "🧠 Deployment / Model",
+                _az_choices,
+                index=0,
+                help="Deployment name in your Azure AI Foundry resource (AZURE_OPENAI_DEPLOYMENT_NAME).",
+            )
+            os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"] = qwen_text_model
+            qwen_image_model = st.selectbox(
+                "🖼️ Image Deployment / Model",
+                ["dall-e-3", "dall-e-2", "gpt-4o", "qwen-image-plus"],
+                index=0,
+                help="Azure image generation deployment, or select Qwen as fallback.",
+                key="ui_azure_image_model",
+            )
 
     # ── Max Tokens ──────────────────────────────────────────────────────
     with st.expander("📏 Max Tokens", expanded=False):

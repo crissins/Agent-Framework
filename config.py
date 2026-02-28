@@ -8,8 +8,10 @@ from enum import Enum
 
 class ModelProvider(Enum):
     """Available model providers."""
-    GITHUB = "github"  # GitHub Models (gpt-4o-mini)
-    QWEN = "qwen"      # Qwen via DashScope
+    GITHUB  = "github"   # GitHub Models
+    QWEN    = "qwen"     # Qwen via DashScope
+    CLAUDE  = "claude"   # Anthropic Claude
+    AZURE   = "azure"    # Azure AI Foundry / Azure OpenAI
 
 
 # ── TTS / Voice Configuration ────────────────────────────────────────────
@@ -82,6 +84,25 @@ class ModelConfig:
         "description": "Qwen Flash (US Virginia region)"
     }
 
+    # Anthropic Claude — OpenAI-compatible endpoint
+    CLAUDE_CONFIG = {
+        "provider": "claude",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "base_url": "https://api.anthropic.com/v1",
+        "model_id": "claude-3-5-haiku-20241022",
+        "description": "Anthropic Claude (claude-3-5-haiku-20241022)"
+    }
+
+    # Azure AI Foundry / Azure OpenAI — endpoint from env var
+    AZURE_FOUNDRY_CONFIG = {
+        "provider": "azure",
+        "api_key_env": "AZURE_OPENAI_API_KEY",
+        "base_url_env": "AZURE_OPENAI_ENDPOINT",   # resolved at runtime
+        "model_id_env": "AZURE_OPENAI_DEPLOYMENT_NAME",
+        "model_id": "gpt-4o",                       # fallback if env not set
+        "description": "Azure AI Foundry / Azure OpenAI"
+    }
+
 
 def load_env_vars():
     """
@@ -102,49 +123,76 @@ def load_env_vars():
                     os.environ[key] = value
 
 
-def get_model_config(use_qwen: bool = False, qwen_region: str | None = None) -> dict:
+def get_model_config(
+    use_qwen: bool = False,
+    qwen_region: str | None = None,
+    provider: str | None = None,
+) -> dict:
     """
     Get model configuration based on provider selection.
-    
+
     Args:
-        use_qwen: If True, returns Qwen config; if False, returns GitHub Models config
+        use_qwen:    Legacy bool — True → Qwen, False → GitHub (ignored when provider is set)
         qwen_region: Region for Qwen models ('singapore', 'beijing', 'us-virginia')
-        
+        provider:    Explicit provider string: 'github' | 'qwen' | 'claude'.
+                     Falls back to MODEL_PROVIDER env var, then use_qwen flag.
+
     Returns:
         Configuration dictionary with api_key_env, base_url, model_id, and description
     """
-    # Load environment variables
     load_env_vars()
-    
-    if use_qwen:
+
+    # Resolve provider: explicit arg > env var > legacy bool
+    resolved_provider = (
+        provider
+        or os.getenv("MODEL_PROVIDER", "")
+        or ("qwen" if use_qwen else "github")
+    ).strip().lower()
+
+    if resolved_provider == "claude":
+        return ModelConfig.CLAUDE_CONFIG
+
+    if resolved_provider == "azure":
+        cfg = dict(ModelConfig.AZURE_FOUNDRY_CONFIG)
+        # Resolve dynamic values from env at call time
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
+        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", cfg["model_id"])
+        cfg["base_url"] = endpoint
+        cfg["model_id"] = deployment
+        cfg["description"] = f"Azure AI Foundry ({deployment})"
+        return cfg
+
+    if resolved_provider == "qwen":
         resolved_region = (qwen_region or os.getenv("DASHSCOPE_REGION", "singapore")).strip().lower()
         if resolved_region == "beijing":
             return ModelConfig.QWEN_CONFIG_BEIJING
         elif resolved_region == "us-virginia":
             return ModelConfig.QWEN_CONFIG_US
-        else:  # default to singapore
+        else:
             return ModelConfig.QWEN_CONFIG_SINGAPORE
-    else:
-        return ModelConfig.GITHUB_CONFIG
+
+    # default: github
+    return ModelConfig.GITHUB_CONFIG
 
 
-def validate_api_keys(use_qwen: bool = False) -> tuple[bool, str]:
+def validate_api_keys(use_qwen: bool = False, provider: str | None = None) -> tuple[bool, str]:
     """
     Validate that required API keys are configured.
-    
+
     Args:
-        use_qwen: If True, checks DASHSCOPE_API_KEY; if False, checks GITHUB_TOKEN
-        
+        use_qwen: Legacy bool (used when provider is not supplied)
+        provider: Explicit provider string: 'github' | 'qwen' | 'claude'
+
     Returns:
         Tuple of (is_valid: bool, message: str)
     """
-    config = get_model_config(use_qwen)
+    config = get_model_config(use_qwen=use_qwen, provider=provider)
     api_key_env = config["api_key_env"]
     api_key = os.getenv(api_key_env)
-    
+
     if not api_key:
         return False, f"❌ Missing {api_key_env} environment variable"
-    
+
     return True, f"✅ {config['description']} configured"
 
 

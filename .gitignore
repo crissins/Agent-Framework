@@ -47,8 +47,9 @@ build/
 .installed.cfg
 *.egg
 
-# IDE
+# IDE - personal settings only (launch/tasks are tracked)
 .idea/
+.vscode/settings.json
 *.swp
 *.swo
 *~
@@ -62,7 +63,7 @@ build/
 ehthumbs.db
 Thumbs.db
 
-# Generated output (large files, not needed in repo)
+# Generated output (large files, not for repo)
 test_output/
 books/audio/
 books/html/
@@ -71,3 +72,7 @@ books/json/
 books/md/
 books/pdf/
 books/voice_clones/
+
+# Scraped / downloaded PDFs from webscrap tools
+webscrap/**/output_pdfs/
+webscrap/**/output/
