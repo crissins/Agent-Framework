@@ -66,7 +66,7 @@ for _otlp_logger_name in (
 # ── Audio / TTS diagnostic logging ────────────────────────────────────────
 # Ensure TTS-related loggers output to console so audio issues are visible
 _audio_log_level = _logging.DEBUG if os.getenv("TTS_DEBUG", "1") == "1" else _logging.INFO
-_console_handler = _logging.StreamHandler(sys.stdout)
+_console_handler = _logging.StreamHandler(sys.stdout)0
 _console_handler.setFormatter(_logging.Formatter(
     "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 ))
