@@ -28,7 +28,13 @@ from typing import Callable
 # ---------------------------------------------------------------------------
 PROVIDER_MODELS: dict[str, list[str]] = {
     "github":  ["gpt-4o-mini", "gpt-4o", "Meta-Llama-3.1-70B-Instruct", "Mistral-large"],
-    "qwen":    ["qwen-flash", "qwen-plus", "qwen-max", "qwen3-max"],
+    "qwen": [
+        "qwen3.5-flash",
+        "qwen3.5-flash-2026-02-23",
+        "qwen3.5-35b-a3b",
+        "qwen3.5-27b",
+        "qwen3.5-122b-a10b",
+    ],
     "claude":  ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-6"],
     "azure":   ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-35-turbo"],
 }
@@ -59,6 +65,7 @@ class BatchJobSpec:
     learning_method: str = "Project-Based Learning"
     num_chapters: int = 5
     pages_per_chapter: int = 4
+    genre: str = "educational"
     template_id: str = "auto"
     palette_id: str = ""
     max_tokens_curriculum: int = 2000
@@ -115,7 +122,10 @@ async def _generate_job_async(
     from models.book_spec import BookOutput
     from models.template_registry import auto_pick_template
 
-    use_qwen = spec.provider == "qwen"
+    # Pass provider explicitly so each thread uses its own config independently
+    # of the MODEL_PROVIDER env-var (which is a shared global and causes race
+    # conditions when multiple batch threads run concurrently).
+    use_qwen = spec.provider == "qwen"  # kept for legacy callers; provider= overrides it
 
     request = BookRequest(
         topic=spec.topic,
@@ -125,10 +135,13 @@ async def _generate_job_async(
         learning_method=spec.learning_method,
         num_chapters=spec.num_chapters,
         pages_per_chapter=spec.pages_per_chapter,
+        genre=spec.genre,
     )
 
     log_fn(f"📋 Building curriculum…")
-    curriculum_agent = await create_curriculum_agent(use_qwen=use_qwen, model_id=spec.model)
+    curriculum_agent = await create_curriculum_agent(
+        use_qwen=use_qwen, model_id=spec.model, provider=spec.provider
+    )
     curriculum = await generate_curriculum(
         curriculum_agent, request, max_tokens=spec.max_tokens_curriculum
     )
@@ -137,7 +150,9 @@ async def _generate_job_async(
 
     log_fn(f"✅ Curriculum ready — {len(curriculum.chapters)} chapters")
 
-    chapter_agent = await create_chapter_agent(use_qwen=use_qwen, model_id=spec.model)
+    chapter_agent = await create_chapter_agent(
+        use_qwen=use_qwen, model_id=spec.model, provider=spec.provider
+    )
     context = {
         "age": request.target_audience_age,
         "country": request.country,
@@ -245,6 +260,7 @@ def _run_job_in_thread(
             learning_method=spec.learning_method,
             num_chapters=spec.num_chapters,
             pages_per_chapter=spec.pages_per_chapter,
+            genre=spec.genre,
         )
 
         html_path = html_dir / "book.html"
@@ -312,10 +328,12 @@ def _run_job_in_thread(
 
 def _set_provider_env(provider: str, model: str) -> None:
     """
-    Configure the MODEL_PROVIDER env var so curriculum/chapter agents
-    pick the right client.  Called once per thread before generation starts.
+    Legacy helper — kept for backward compatibility but no longer relied on
+    for agent creation (provider is now passed explicitly to avoid cross-thread
+    env-var contamination when multiple batch jobs run in parallel).
     """
-    os.environ["MODEL_PROVIDER"] = provider
+    # Only set AZURE_OPENAI_DEPLOYMENT_NAME which is still read from env by
+    # the Azure config path; skip MODEL_PROVIDER to avoid thread races.
     if provider == "azure":
         os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"] = model
 

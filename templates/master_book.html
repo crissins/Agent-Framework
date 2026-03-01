@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Libro Educativo — Template</title>
+<!-- KaTeX — math rendering (loaded synchronously so render() can call renderMathInElement) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <style>
 /* ══════════════════════════════════════════════════════════════════════
    DESIGN TOKENS  — no external fonts, fully VSCode-safe
@@ -88,6 +92,8 @@ html[dir="rtl"] .cover-desc {
 .book-cover {
   width: var(--page-w);
   max-width: 100%;
+  height: var(--page-h);
+  overflow: hidden;
   margin: 0 auto 32px;
   background: var(--p-primary);
   border-radius: 2px 14px 14px 2px;
@@ -190,10 +196,13 @@ html[dir="rtl"] .cover-desc {
   position: fixed;
   left: -10000px;
   top: 0;
-  width: 638px; /* 794 - 2*14(frame margin) - 2*64(padding) */
+  width: 626px; /* 794 - 2*14(frame margin) - 2*6(border) - 2*64(padding) */
   visibility: hidden;
   pointer-events: none;
 }
+/* padding: 1px prevents child margins from collapsing out of the wrapper,
+   giving getBoundingClientRect() the full height including block margins. */
+.ch-measure-blk { padding: 1px 0; }
 
 /* Continuation-page chapter label */
 .ch-cont-label {
@@ -209,17 +218,7 @@ html[dir="rtl"] .cover-desc {
   position: relative;
   z-index: 1;
 }
-.page-frame::before {
-  content: '';
-  position: absolute; inset: 0;
-  border-radius: var(--radius);
-  background: repeating-linear-gradient(
-    0deg,
-    transparent, transparent 27px,
-    rgba(0,0,0,.04) 27px, rgba(0,0,0,.04) 28px
-  );
-  pointer-events: none;
-}
+/* Notebook ruled lines removed — clean page background only */
 .inner-border {
   position: absolute; inset: 9px;
   border: var(--b-thin) solid var(--p-secondary);
@@ -251,12 +250,14 @@ html[dir="rtl"] .cover-desc {
 .hdr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--p-secondary); flex-shrink: 0; }
 .hdr-right { font-size: .63rem; letter-spacing: .1em; text-transform: uppercase; color: var(--p-text-light); }
 
-/* ── Page footer ──────────────────────────────────────────────────── */
+/* ── Page footer with hard full-width delimiter ───────────────────── */
 .page-ftr {
-  position: absolute; bottom: 20px; left: 30px; right: 30px;
-  display: flex; justify-content: space-between; align-items: center;
-  border-top: 1.5px solid var(--p-secondary);
-  padding-top: 9px;
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: center; align-items: center;
+  border-top: 2.5px solid var(--p-primary);
+  padding: 9px 30px 14px 30px;
+  background: var(--p-page-bg);
+  z-index: 10;
 }
 .ftr-title { font-size: .62rem; letter-spacing: .09em; text-transform: uppercase; color: var(--p-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .ftr-chapter { font-size: .62rem; letter-spacing: .09em; text-transform: uppercase; color: var(--p-text-light); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
@@ -294,7 +295,8 @@ html[dir="rtl"] .cover-desc {
 }
 .toc-info { flex: 1; padding-left: 10px; }
 .toc-ch-name { font-family: var(--f-body); font-weight: 800; font-size: .97rem; color: var(--p-text-dark); }
-.toc-ch-sum  { font-size: .78rem; color: var(--p-text-light); line-height: 1.55; margin-top: 4px; }
+.toc-ch-sum  { font-size: .78rem; color: var(--p-text-light); line-height: 1.55; margin-top: 4px;
+               display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .toc-dots { flex: 1; min-width: 20px; border-bottom: 2px dotted rgba(0,0,0,.16); margin: 0 12px; align-self: flex-end; margin-bottom: 7px; }
 .toc-pnum { font-family: var(--f-body); font-weight: 800; font-size: .88rem; color: var(--p-primary); min-width: 22px; text-align: right; }
 
@@ -446,6 +448,13 @@ html[dir="rtl"] .cover-desc {
 }
 .blk-challenge .blk-label { color: rgba(255,255,255,.75); }
 .blk-challenge p { color: rgba(255,255,255,.95) !important; margin: 0; }
+/* Answer blank — student writes response on these printed lines */
+.blk-answer-blank {
+  display: block; height: 0;
+  border-bottom: 1.5px solid var(--p-text-mid);
+  margin: 11px 0 4px 0; width: 82%;
+}
+.blk-challenge .blk-answer-blank { border-bottom-color: rgba(255,255,255,.45); }
 
 .blk-fact {
   border-top: 3px solid var(--p-accent2);
@@ -480,8 +489,8 @@ html[dir="rtl"] .cover-desc {
   font-size: .82rem;
 }
 .img-ph-icon { font-size: 2.4rem; opacity: .45; display: block; margin-bottom: 8px; }
-.img-block { margin: 20px 0; border-radius: 8px; overflow: hidden; border: 2px solid var(--p-light); box-shadow: 0 3px 12px rgba(0,0,0,.1); }
-.img-block img { width: 100%; display: block; }
+.img-block { margin: 20px 0; border-radius: 8px; overflow: hidden; border: 2px solid var(--p-light); box-shadow: 0 3px 12px rgba(0,0,0,.1); text-align: center; background: #fafafa; }
+.img-block img { display: block; margin: 0 auto; max-width: 100%; width: auto; height: auto; max-height: 400px; object-fit: contain; }
 .img-caption { font-size: .7rem; color: var(--p-text-light); font-style: italic; padding: 5px 12px; background: var(--p-light); text-align: center; }
 
 .divider { border: none; border-top: 1px dashed rgba(0,0,0,.14); margin: 22px 0; }
@@ -514,6 +523,23 @@ html[dir="rtl"] .cover-desc {
    THEME CSS — injected by the agent per template selection
 ══════════════════════════════════════════════════════════════════════ */
 /* THEME_CSS_PLACEHOLDER */
+
+/* ══════════════════════════════════════════════════════════════════════
+   MATH — display equation block
+══════════════════════════════════════════════════════════════════════ */
+.blk-math-display {
+  text-align: center;
+  padding: 20px 12px 16px;
+  margin: 18px 0;
+  background: var(--p-light);
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,.08);
+  overflow-x: auto;
+}
+.blk-math-display .katex-display { margin: 0; }
+/* Inline KaTeX inside any block */
+.content .katex { font-size: 1rem; }
+.content .katex-display { margin: 6px 0; }
 
 /* ══════════════════════════════════════════════════════════════════════
    PRINT & RESPONSIVE
@@ -658,6 +684,24 @@ function renderQR(b) {
 /* ════════════════════════════════════════════════════════════════════════
    TEXT RENDERER — converts plain text (with \n and • bullets) into HTML
 ════════════════════════════════════════════════════════════════════════ */
+/* Split text on LaTeX math spans, escaping only the non-math parts.
+   This lets KaTeX auto-render process $...$ without seeing HTML entities. */
+function renderMathText(s) {
+  var result = '';
+  var remaining = s;
+  /* Match $$...$$ first (display), then $...$ (inline) */
+  /* Also pass \[...\] (display) and \(...\) (inline) through raw so KaTeX sees them */
+  var matRe = /(\$\$[\s\S]+?\$\$|\$[^\$\n]+?\$|\\\[[\s\S]+?\\\]|\\\([^\)]+?\\\))/;
+  while (remaining.length > 0) {
+    var m = matRe.exec(remaining);
+    if (!m) { result += esc(remaining); break; }
+    if (m.index > 0) result += esc(remaining.substring(0, m.index));
+    result += m[1]; /* LaTeX span — pass through raw for KaTeX */
+    remaining = remaining.substring(m.index + m[1].length);
+  }
+  return result;
+}
+
 function renderText(raw) {
   if (!raw) return '';
   var paras = raw.split(/\n{2,}/);
@@ -671,11 +715,11 @@ function renderText(raw) {
       out += '<ul class="blk-list">';
       for (var li = 0; li < lines.length; li++) {
         var item = lines[li].trim().replace(/^\u2022\s*/, '');
-        if (item) out += '<li>' + esc(item) + '</li>';
+        if (item) out += '<li>' + renderMathText(item) + '</li>';
       }
       out += '</ul>';
     } else {
-      out += '<p>' + esc(para).replace(/\n/g, '<br>') + '</p>';
+      out += '<p>' + renderMathText(para).replace(/\n/g, '<br>') + '</p>';
     }
   }
   return out;
@@ -711,21 +755,33 @@ function renderBlock(b) {
     case "heading":
       return '<div class="blk-heading"><h2>' + esc(b.text) + '</h2></div>';
 
-    case "concept":
-      return '<div class="blk-concept"><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + '</div>';
+    case "math_display":
+      /* Standalone display equation — LaTeX rendered by KaTeX auto-render */
+      return '<div class="blk-math-display">' + (b.latex || b.text || '') + '</div>';
 
-    case "example":
-      return '<div class="blk-example"><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + '</div>';
+    case "concept": {
+      var cv = (b.video || b.video_qr) ? renderVideoPill(b) : "";
+      return '<div class="blk-concept"><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + cv + '</div>';
+    }
+
+    case "example": {
+      var ev = (b.video || b.video_qr) ? renderVideoPill(b) : "";
+      return '<div class="blk-example"><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + ev + '</div>';
+    }
 
     case "activity":
-      var v = b.video ? renderVideoPill(b) : "";
-      return '<div class="blk-activity"><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + v + '</div>';
+      var v = (b.video || b.video_qr) ? renderVideoPill(b) : "";
+      return '<div class="blk-activity"><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + v
+           + '<div class="blk-answer-blank"></div><div class="blk-answer-blank"></div>' + '</div>';
 
-    case "challenge":
-      return '<div class="blk-challenge"><div class="blk-label">&#9998; ' + esc(b.label) + '</div>' + renderText(b.text) + '</div>';
+    case "challenge": {
+      var chv = (b.video || b.video_qr) ? renderVideoPill(b) : "";
+      return '<div class="blk-challenge"><div class="blk-label">&#9998; ' + esc(b.label) + '</div>' + renderText(b.text) + chv
+           + '<div class="blk-answer-blank"></div><div class="blk-answer-blank"></div>' + '</div>';
+    }
 
     case "fact":
-      var fv = b.video ? renderVideoPill(b) : "";
+      var fv = (b.video || b.video_qr) ? renderVideoPill(b) : "";
       return '<div class="blk-fact"><div class="blk-fact-icon">&#128161;</div><div><div class="blk-label">' + esc(b.label) + '</div>' + renderText(b.text) + fv + '</div></div>';
 
     case "question":
@@ -792,8 +848,8 @@ function buildTOC(d) {
   var orn = d.theme.ornament || "\u2726";
   var html = "";
 
-  /* Split TOC into pages of ~6 chapters each to avoid overflow */
-  var ITEMS_PER_PAGE = 6;
+  /* Split TOC into pages of 4 chapters each — gives room for 3-line summaries */
+  var ITEMS_PER_PAGE = 4;
   var totalItems = d.toc.length;
   var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
 
@@ -807,10 +863,7 @@ function buildTOC(d) {
     html += '<span class="c-tl">' + orn + '</span><span class="c-tr">' + orn + '</span>';
     html += '<span class="c-bl">' + orn + '</span><span class="c-br">' + orn + '</span>';
 
-    html += '<div class="page-hdr">';
-    html += '<div class="hdr-left"><span class="hdr-dot"></span>' + esc(d.request.topic) + '</div>';
-    html += '<div class="hdr-right">' + esc(shortTitle(d.title, 42)) + '</div>';
-    html += '</div>';
+    html += '<div class="page-hdr"></div>'; /* clean bar */
 
     html += '<div class="toc-eyebrow">' + esc(I.index) + '</div>';
     if (pg === 0) {
@@ -869,15 +922,19 @@ function paginateChapters(d) {
   var tocPages = Math.ceil(d.toc.length / 6);
 
   /* ── Layout constants matching CSS (px) ───────────────────────────── */
-  var PAGE_H     = 1123;  /* --page-h                                  */
-  var FRM_MARGIN = 14;    /* .page-frame margin (all sides)            */
-  var PAD_TOP    = 52;    /* .page-frame padding-top                   */
-  var PAD_BOT    = 88;    /* .page-frame padding-bottom                */
-  var HDR_H      = 74;    /* .page-hdr height inc margin-bottom:24px   */
-  var BLK_GAP    = 4;     /* breathing room added to each block height */
+  var PAGE_H       = 1123; /* --page-h                                         */
+  var FRM_MARGIN   = 14;   /* .page-frame margin (all sides)                   */
+  var BORDER       = 6;    /* .page-frame border: 6px — box-sizing:border-box  */
+  var PAD_TOP      = 52;   /* .page-frame padding-top                          */
+  var PAD_BOT      = 88;   /* .page-frame padding-bottom                       */
+  var HDR_H        = 74;   /* .page-hdr height inc margin-bottom:24px          */
+  var BLK_GAP      = 6;    /* margins are now captured by the padding:1px wrapper; +6 breathing */
+  var CONT_LABEL_H = 0;    /* continuation label is hidden — no height penalty  */
+  var SAFETY       = 56;   /* generous guard — repairOverflow() fixes any survivors */
 
-  var frameH  = PAGE_H - 2 * FRM_MARGIN;            /* 1095 */
-  var usableH = frameH - PAD_TOP - PAD_BOT - HDR_H; /* 881  */
+  /* border-box: the 1095px frame height INCLUDES the 6px border on each side */
+  var frameH  = PAGE_H - 2*FRM_MARGIN - 2*BORDER;               /* 1083 */
+  var usableH = frameH - PAD_TOP - PAD_BOT - HDR_H - SAFETY;    /* 845  */
 
   var globalPage = 1 + tocPages; /* 1 cover + N toc pages → first chapter page */
 
@@ -910,7 +967,8 @@ function paginateChapters(d) {
       if ((curH + bh) > usableH && curPg.length > 0) {
         pages.push(curPg);
         curPg = [];
-        curH  = 0;
+        /* Continuation pages have a .ch-cont-label header — deduct its height */
+        curH  = CONT_LABEL_H;
       }
       curPg.push(bi);
       curH += bh;
@@ -924,29 +982,24 @@ function paginateChapters(d) {
       var pNum    = globalPage + pi;
       var pageEl  = document.createElement('div');
       pageEl.className = 'book-page';
+      pageEl.setAttribute('data-chapter-idx', String(idx));
 
       var inner = '<div class="page-frame">';
       inner += '<div class="inner-border"></div>';
       inner += '<span class="c-tl">' + orn + '</span><span class="c-tr">' + orn + '</span>';
       inner += '<span class="c-bl">' + orn + '</span><span class="c-br">' + orn + '</span>';
 
-      /* Page header */
-      inner += '<div class="page-hdr"><div class="hdr-left"><span class="hdr-dot"></span>'
-             + esc(d.request.topic) + '</div>'
-             + '<div class="hdr-right">' + esc(shortTitle(d.title, 40)) + '</div></div>';
+      /* Page header — clean bar only, no repeated title/topic text */
+      inner += '<div class="page-hdr"></div>';
 
-      /* Chapter title (first page) OR continuation label */
+      /* Chapter title (first page) — continuation pages get only a thin spacer */
       if (isFirst) {
         inner += '<div class="ch-block">'
                + '<div class="ch-eyebrow">' + esc(I.chapter) + '\u00a0' + (idx + 1) + '</div>'
                + '<h2 class="ch-h2">' + esc(ch.title) + '</h2>'
                + '</div>';
       } else {
-        inner += '<div class="ch-cont-label">'
-               + esc(I.ch_abbr) + '\u00a0' + (idx + 1)
-               + (pages.length > 1 ? '\u2002\u00b7\u2002' + (pi + 1) + '\u200a/\u200a' + pages.length : '')
-               + '\u2003\u2014\u2003' + esc(chShort)
-               + '</div>';
+        inner += '<div class="ch-cont-label" style="visibility:hidden;height:0;margin:0;padding:0;border:none;"></div>';
       }
 
       /* Content blocks for this page */
@@ -979,15 +1032,231 @@ function paginateChapters(d) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   BLOCK SPLITTER — splits a single oversized block at the child midpoint.
+   Returns the new second-half element (already contains the moved nodes),
+   or null if the block cannot be split further.
+════════════════════════════════════════════════════════════════════════ */
+function splitOversizedBlock(blockEl) {
+  var kids     = Array.from(blockEl.children);
+  var hasLabel = kids.length > 0 && kids[0].classList.contains('blk-label');
+  var startIdx = hasLabel ? 1 : 0;          /* first non-label child index */
+  var content  = kids.slice(startIdx);
+
+  /* ── Single child: split text at sentence boundaries ─────────────── */
+  if (content.length < 2) {
+    if (content.length === 1) {
+      var child = content[0];
+      var html  = child.innerHTML;
+      /* Collect all sentence-end positions: [.!?] followed by whitespace */
+      var ends = [];
+      for (var si = 0; si < html.length - 1; si++) {
+        var ch = html[si];
+        if (ch === '.' || ch === '!' || ch === '?') {
+          if (html[si + 1] === ' ' || html[si + 1] === '\n') ends.push(si + 1);
+        }
+      }
+      var splitPos = -1;
+      if (ends.length >= 2) {
+        splitPos = ends[Math.floor(ends.length * 0.55)];
+      } else {
+        /* fallback: nearest word boundary at ~55 % of character count */
+        var target = Math.floor(html.length * 0.55);
+        splitPos = html.lastIndexOf(' ', target);
+        if (splitPos < 20) return null;
+      }
+      var firstHtml  = html.substring(0, splitPos).trim();
+      var secondHtml = html.substring(splitPos).trim();
+      if (!secondHtml) return null;
+      child.innerHTML = firstHtml;
+      var secondHalf = blockEl.cloneNode(false);
+      if (hasLabel) {
+        var lc2 = kids[0].cloneNode(true);
+        lc2.style.opacity = '0.4';
+        secondHalf.appendChild(lc2);
+      }
+      var newChild = child.cloneNode(false);
+      newChild.innerHTML = secondHtml;
+      secondHalf.appendChild(newChild);
+      return secondHalf;
+    }
+    return null;      /* truly unsplittable (e.g. single image) */
+  }
+
+  /* ── Multiple children: split at height midpoint ─────────────────── */
+  var totalH = blockEl.getBoundingClientRect().height;
+  var accum  = 0;
+  var splitAt = startIdx + 1;               /* keep at least one content child */
+  for (var i = 0; i < content.length - 1; i++) {
+    accum  += content[i].getBoundingClientRect().height;
+    splitAt = startIdx + i + 1;
+    if (accum >= totalH * 0.55) break;
+  }
+
+  /* Build second-half clone (same tag + classes, shallow) */
+  var secondHalf = blockEl.cloneNode(false);
+  if (hasLabel) {
+    /* Carry a dimmed label so the reader sees context on the continuation */
+    var lc = kids[0].cloneNode(true);
+    lc.style.opacity = '0.4';
+    secondHalf.appendChild(lc);
+  }
+  /* Move live DOM nodes (not innerHTML copies) so we don't duplicate ids */
+  var toMove = kids.slice(splitAt);
+  for (var j = 0; j < toMove.length; j++) {
+    secondHalf.appendChild(toMove[j]);
+  }
+  /* Guard: second half must have real content beyond just the label */
+  var realKids = secondHalf.children.length - (hasLabel ? 1 : 0);
+  if (realKids < 1) return null;
+  return secondHalf;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PASS 4 — POST-RENDER OVERFLOW REPAIR
+   Runs AFTER KaTeX so all block heights reflect actual rendered math.
+
+   Step A — pre-pass: split any individual block taller than MAX_BLK_H
+             into two sibling blocks at its child midpoint.
+   Step B — main loop: move overflow blocks to the next page (or a newly
+             cloned continuation page). Repeats until stable.
+════════════════════════════════════════════════════════════════════════ */
+function repairOverflow() {
+  var MAX_PASSES = 18;
+  var MAX_BLK_H  = 700; /* blocks taller than this are split before moving */
+
+  /* ── Step A: split oversized individual blocks ────────────────────── */
+  /* Run several sub-passes because splitting creates new siblings that may
+     themselves still be too tall. */
+  for (var sp = 0; sp < 6; sp++) {
+    var changed = false;
+    var allContents = Array.from(document.querySelectorAll('.content'));
+    for (var ci = 0; ci < allContents.length; ci++) {
+      var kids = Array.from(allContents[ci].children);
+      for (var ki = 0; ki < kids.length; ki++) {
+        if (kids[ki].getBoundingClientRect().height <= MAX_BLK_H) continue;
+        var second = splitOversizedBlock(kids[ki]);
+        if (!second) continue;
+        var ref = kids[ki].nextSibling;
+        allContents[ci].insertBefore(second, ref || null);
+        kids.splice(ki + 1, 0, second); /* keep loop in sync */
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  /* ── Step B: move overflow blocks to next / new page ─────────────── */
+  for (var pass = 0; pass < MAX_PASSES; pass++) {
+    var pages    = Array.from(document.querySelectorAll('.book-page'));
+    var anyFixed = false;
+
+    for (var pi = 0; pi < pages.length; pi++) {
+      var pageEl  = pages[pi];
+      var frame   = pageEl.querySelector('.page-frame');
+      if (!frame) continue;
+      var ftr     = frame.querySelector('.page-ftr');
+      var content = frame.querySelector('.content');
+      if (!ftr || !content) continue;
+
+      /* Expose overflow temporarily for accurate measurements */
+      frame.style.overflow = 'visible';
+      var ftrTop = ftr.getBoundingClientRect().top - 8;
+      var blks   = Array.from(content.children);
+
+      var overflow = [];
+      for (var bi = 0; bi < blks.length; bi++) {
+        if (blks[bi].getBoundingClientRect().bottom > ftrTop) overflow.push(blks[bi]);
+      }
+      frame.style.overflow = '';
+
+      if (overflow.length === 0) continue;
+
+      /* Keep the first block when ALL overflow to prevent infinite loops */
+      var toMove = (overflow.length === blks.length) ? overflow.slice(1) : overflow;
+
+      /* When the very first block itself overflows (all-overflow guard fired),
+         try to split it at sentence boundaries so its visible first portion
+         stays on this page and the continuation is pushed to the next page. */
+      if (overflow.length === blks.length && overflow.length > 0) {
+        var splitResult = splitOversizedBlock(overflow[0]);
+        if (splitResult) {
+          content.insertBefore(splitResult, overflow[0].nextSibling || null);
+          anyFixed = true;
+          /* Re-measure: the split may have made the first block short enough */
+          frame.style.overflow = 'visible';
+          var ftrTop2  = ftr.getBoundingClientRect().top - 8;
+          var blks2    = Array.from(content.children);
+          var toMove2  = [];
+          var allOver2 = true;
+          for (var b2 = 0; b2 < blks2.length; b2++) {
+            if (blks2[b2].getBoundingClientRect().bottom > ftrTop2) {
+              toMove2.push(blks2[b2]);
+            } else { allOver2 = false; }
+          }
+          frame.style.overflow = '';
+          toMove = allOver2 ? toMove2.slice(1) : toMove2;
+          blks   = blks2;
+        }
+      }
+
+      if (toMove.length === 0) continue;
+
+      var movedHTML = '';
+      for (var oi = 0; oi < toMove.length; oi++) {
+        movedHTML += toMove[oi].outerHTML;
+        content.removeChild(toMove[oi]);
+      }
+
+      /* Only pass overflow to the next page when it belongs to the SAME
+         chapter.  If the next page is a different chapter (or TOC/cover)
+         we must create a brand-new continuation page so content is never
+         lost or injected into an unrelated chapter. */
+      var myChIdx  = pageEl.getAttribute('data-chapter-idx');
+      var nextPage = pages[pi + 1];
+      var isSameCh = nextPage && nextPage.getAttribute('data-chapter-idx') === myChIdx;
+      var nextContent = isSameCh ? nextPage.querySelector('.content') : null;
+
+      if (nextContent) {
+        nextContent.insertAdjacentHTML('afterbegin', movedHTML);
+      } else {
+        /* Build a fresh continuation page by cloning the current page shell
+           (keeps frame, header, footer, ornaments) then:
+           – replace any chapter-title block with a compact cont-label
+           – replace the content area with the overflow blocks             */
+        var newPage  = pageEl.cloneNode(true);
+        newPage.setAttribute('data-chapter-idx', myChIdx);
+
+        var newFrame = newPage.querySelector('.page-frame');
+        if (newFrame) {
+          /* Swap full chapter-title (.ch-block) → invisible spacer (clean pages) */
+          var chBlock = newFrame.querySelector(':scope > .ch-block');
+          if (chBlock) {
+            var contLbl = document.createElement('div');
+            contLbl.className = 'ch-cont-label';
+            contLbl.style.cssText = 'visibility:hidden;height:0;margin:0;padding:0;border:none;';
+            chBlock.parentNode.replaceChild(contLbl, chBlock);
+          }
+          /* Replace content */
+          var nc = newFrame.querySelector('.content');
+          if (nc) nc.innerHTML = movedHTML;
+        }
+
+        /* Insert immediately after the current page, before any next-chapter page */
+        var insertBefore = nextPage || null;
+        pageEl.parentNode.insertBefore(newPage, insertBefore);
+        pages.splice(pi + 1, 0, newPage);
+      }
+      anyFixed = true;
+    }
+    if (!anyFixed) break;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    PAGE FOOTER
 ════════════════════════════════════════════════════════════════════════ */
 function pageFooter(title, num, chapter) {
-  var html = '<div class="page-ftr">';
-  html += '<span class="ftr-title">'   + esc(title)   + '</span>';
-  html += '<div class="page-num">'     + esc(num)     + '</div>';
-  html += '<span class="ftr-chapter">' + chapter      + '</span>';
-  html += '</div>';
-  return html;
+  return '<div class="page-ftr"><div class="page-num">' + esc(num) + '</div></div>';
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1022,6 +1291,22 @@ function render(d) {
 
   /* Pass 2: split each chapter's blocks into strict A4-sized pages */
   paginateChapters(d);
+
+  /* Pass 3: render LaTeX FIRST so block heights include KaTeX elements */
+  if (typeof renderMathInElement === 'function') {
+    renderMathInElement(document.getElementById('app'), {
+      delimiters: [
+        { left: '$$',  right: '$$',  display: true  },
+        { left: '\\[', right: '\\]', display: true  },
+        { left: '$',   right: '$',   display: false },
+        { left: '\\(', right: '\\)', display: false }
+      ],
+      throwOnError: false
+    });
+  }
+
+  /* Pass 4: post-render overflow repair — measures ACTUAL post-KaTeX heights */
+  repairOverflow();
 }
 
 render(BOOK);

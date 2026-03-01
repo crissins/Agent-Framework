@@ -11,21 +11,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def create_curriculum_agent(use_qwen: bool = False, model_id: str | None = None) -> ChatAgent:
+async def create_curriculum_agent(
+    use_qwen: bool = False,
+    model_id: str | None = None,
+    provider: str | None = None,
+) -> ChatAgent:
     """
     Create a curriculum design agent using either GitHub Models or Qwen.
-    
+
     Args:
-        use_qwen: If True, use Qwen models via DashScope; if False, use GitHub Models
-    
+        use_qwen:  Legacy bool — True → Qwen, False → GitHub (ignored when provider is set)
+        model_id:  Override the default model ID.
+        provider:  Explicit provider string: 'github' | 'qwen' | 'claude' | 'azure'.
+                   When supplied this takes priority over use_qwen AND the MODEL_PROVIDER
+                   env-var, which prevents cross-thread contamination in batch runs.
+
     Implements Microsoft Agent Framework best practices:
     - Uses OpenAIChatClient with specified endpoint
     - Provides clear, focused instructions without vague directives
     - Returns typed Agent instance
     - Supports both development and production workflows
     """
-    config = get_model_config(use_qwen)
-    # Allow explicit model override when using Qwen
+    config = get_model_config(use_qwen, provider=provider)
+    # Allow explicit model override
     resolved_model_id = model_id if model_id else config.get("model_id")
     client = OpenAIChatClient(
         api_key=os.getenv(config["api_key_env"], ""),

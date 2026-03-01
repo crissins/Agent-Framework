@@ -61,27 +61,27 @@ class ModelConfig:
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        "model_id": "qwen-flash",
+        "model_id": "qwen3.5-flash",
         "region": "singapore",
-        "description": "Qwen Flash (Singapore region)"
+        "description": "Qwen3.5 Flash (Singapore region) — free quota"
     }
-    
+
     QWEN_CONFIG_BEIJING = {
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model_id": "qwen-flash",
+        "model_id": "qwen3.5-flash",
         "region": "beijing",
-        "description": "Qwen Flash (Beijing region)"
+        "description": "Qwen3.5 Flash (Beijing region) — free quota"
     }
-    
+
     QWEN_CONFIG_US = {
         "provider": "qwen",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope-us.aliyuncs.com/compatible-mode/v1",
-        "model_id": "qwen-flash",
+        "model_id": "qwen3.5-flash",
         "region": "us-virginia",
-        "description": "Qwen Flash (US Virginia region)"
+        "description": "Qwen3.5 Flash (US Virginia region) — free quota"
     }
 
     # Anthropic Claude — OpenAI-compatible endpoint

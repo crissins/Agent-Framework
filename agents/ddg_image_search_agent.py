@@ -40,24 +40,30 @@ _REGION_MAP = {
 
 
 def _build_image_query(query: str, language: str = "Spanish", topic: str = "") -> str:
-    """Build a more specific search query to improve image relevance.
+    """Build a clean, short search query that avoids DDG 403 rate-limits.
 
-    Adds language-appropriate educational qualifiers and wraps the core
-    query in quotes so DDG treats it as a phrase.
+    Strips Spanish/special punctuation (¡!¿?:,), keeps the 4 most
+    meaningful words, and appends a single educational qualifier.
+    Long quoted-phrase searches with special chars reliably get 403.
     """
     lang = (language or "Spanish").strip().lower()
     if lang.startswith("port"):
-        qualifiers = "educativo OR educação infantil"
+        qualifier = "educativo"
     elif lang.startswith("eng"):
-        qualifiers = "educational OR for kids"
+        qualifier = "educational"
     else:
-        qualifiers = "educativo OR para niños"
+        qualifier = "educativo"
 
-    # Wrap the core query in quotes for phrase matching
-    base = f'"{query}"'
-    if topic and topic.lower() not in query.lower():
-        base = f'"{topic}" {base}'
-    return f"{base} {qualifiers}"
+    # Remove punctuation characters that trigger DDG 403
+    clean = re.sub(r'[¡!¿?:,;"\(\)\[\]]', ' ', query)
+    clean = re.sub(r"'", ' ', clean)
+    clean = re.sub(r'\s+', ' ', clean).strip()
+
+    # Keep only the 4 most meaningful words (skip very short stop-words)
+    words = [w for w in clean.split() if len(w) > 3][:4]
+    base = " ".join(words) if words else clean[:40]
+
+    return f"{base} {qualifier}"
 
 
 def _score_image_result(result: dict, query: str, topic: str = "") -> float:
@@ -134,11 +140,18 @@ async def search_image(
     """
     def _sync() -> Optional[ImagePlaceholder]:
         region = _REGION_MAP.get(country, "wt-wt")
-        regions_to_try = [region, "us-en"] if region != "us-en" else ["us-en"]
+        # Try local region first, then us-en, then worldwide
+        if region == "us-en":
+            regions_to_try = ["us-en", "wt-wt"]
+        else:
+            regions_to_try = [region, "us-en", "wt-wt"]
 
         enhanced_query = _build_image_query(query, language, topic)
-        # Also try the raw query as a fallback (phrase search can be too strict)
-        queries_to_try = [enhanced_query, query]
+        # Cleaned ultra-short fallback: first 2 meaningful words + qualifier
+        lang_q = "educational" if (language or "").lower().startswith("eng") else "educativo"
+        short_words = [w for w in re.sub(r'[^\w\s]', ' ', query).split() if len(w) > 3][:2]
+        short_query = " ".join(short_words) + f" {lang_q}" if short_words else enhanced_query
+        queries_to_try = [enhanced_query, short_query]
 
         for attempt_region in regions_to_try:
             for q in queries_to_try:

@@ -206,6 +206,7 @@ wrapped in triple backticks with the tag `book_request_json`:
 async def create_chat_agent(
     use_qwen: bool = True,
     model_id: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> ChatAgent:
     """
     Create the conversational chat agent.
@@ -213,11 +214,14 @@ async def create_chat_agent(
     Args:
         use_qwen: Use Qwen models (recommended for multilingual).
         model_id: Override the default text model.
+        provider: Explicit provider string ('github' | 'qwen' | 'claude' | 'azure').
+                  When supplied this takes priority over use_qwen AND the MODEL_PROVIDER
+                  env-var, preventing contamination from concurrent batch runs.
 
     Returns:
         ChatAgent instance ready for multi-turn conversation.
     """
-    config = get_model_config(use_qwen)
+    config = get_model_config(use_qwen, provider=provider)
     mid = model_id or config["model_id"]
 
     client = OpenAIChatClient(

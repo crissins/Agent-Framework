@@ -338,8 +338,18 @@ def _parse_markdown_to_blocks(md: str, chapter: ChapterContent) -> List[dict]:
     if intro:
         blocks, img_idx = _extract_inline_images(intro, blocks, gen_imgs, img_idx)
         text = _strip_images_and_videos(intro)
-        if text.strip():
-            blocks.append({"type": "concept", "label": "", "text": _md_to_plain(text)})
+        text_plain = _md_to_plain(text).strip()
+        # Drop intro lines that are just a restatement of the chapter title
+        # (LLMs often open with the title as plain text or a lone # heading)
+        _ch_title_norm = re.sub(r'[^\w\s]', '', chapter.chapter_title.lower()).strip()
+        _intro_norm    = re.sub(r'[^\w\s]', '', text_plain.lower()).strip()
+        _is_intro_title = (
+            _intro_norm == _ch_title_norm
+            or _ch_title_norm in _intro_norm
+            or re.sub(r'^cap[íi]tulo\s+\d+\s*[:\-]\s*', '', _intro_norm) == _ch_title_norm
+        )
+        if text_plain and not _is_intro_title:
+            blocks.append({"type": "concept", "label": "", "text": text_plain})
 
     for b_idx, (start, end, heading, is_h2) in enumerate(boundaries):
         next_start = boundaries[b_idx + 1][0] if b_idx + 1 < len(boundaries) else len(md)
@@ -350,19 +360,47 @@ def _parse_markdown_to_blocks(md: str, chapter: ChapterContent) -> List[dict]:
 
         # Markdown heading with no matching keyword → might be the chapter title or a sub-section
         has_keyword = any(kw in heading.lower() for kw in _HEADING_MAP)
+
+        # Detect whether this heading is simply repeating the chapter title.
+        # LLMs often emit "Capítulo N: <title>" or "**<title>**" at the top
+        # of the chapter body — both must be suppressed so the template's
+        # ch-h2 doesn't render the title a second time.
+        def _is_title_repeat(h: str, ct: str) -> bool:
+            h_n = re.sub(r'^cap[íi]tulo\s+\d+\s*[:\-]\s*', '',
+                         re.sub(r'^chapter\s+\d+\s*[:\-]\s*', '',
+                                h.strip().lower()))
+            ct_n = ct.strip().lower()
+            return h_n == ct_n or ct_n in h_n
+
+        is_title_repeat = (
+            not has_keyword
+            and _is_title_repeat(heading, chapter.chapter_title)
+        )
+
         if is_h2 and not has_keyword:
-            # Skip the heading block if it matches the chapter title
-            # (the template already renders it in the ch-h2 element)
-            is_chapter_title = (
-                heading.strip().lower() == chapter.chapter_title.strip().lower()
-            )
-            if not is_chapter_title:
+            if not is_title_repeat:
                 blocks.append({"type": "heading", "text": label})
 
             # IMPORTANT: still process the body text under this heading
             # (intro paragraphs, images, videos) — don't skip it
             # Only create image blocks for [IMAGE:] placeholders that have a real URL;
             # leftover placeholders without images are silently dropped.
+            blocks, img_idx = _extract_inline_images(body, blocks, gen_imgs, img_idx)
+            video_text, video_placeholder, vid_idx = _extract_video(body, gen_vids, vid_idx)
+            text = _md_to_plain(_strip_images_and_videos(body)).strip()
+            if text:
+                block: dict = {"type": "concept", "label": "", "text": text}
+                if video_text:
+                    block["video"] = video_text
+                if video_placeholder and video_placeholder.qr_code:
+                    block["video_qr"] = video_placeholder.qr_code
+                    block["video_url"] = video_placeholder.url
+                blocks.append(block)
+            continue
+
+        # Bold **heading** lines that repeat the chapter title → skip heading,
+        # but still process the body content beneath them.
+        if is_title_repeat and not is_h2:
             blocks, img_idx = _extract_inline_images(body, blocks, gen_imgs, img_idx)
             video_text, video_placeholder, vid_idx = _extract_video(body, gen_vids, vid_idx)
             text = _md_to_plain(_strip_images_and_videos(body)).strip()
@@ -449,8 +487,26 @@ def _strip_images_and_videos(text: str) -> str:
 
 
 def _md_to_plain(md: str) -> str:
-    """Lightweight markdown-to-plaintext for block content."""
+    """Lightweight markdown-to-plaintext for block content.
+
+    LaTeX expressions ($$...$$, $...$) are preserved intact so they can be
+    rendered by KaTeX in the HTML template.
+    """
     t = md.strip()
+
+    # ── Protect LaTeX before stripping markdown ───────────────────────────
+    # Stash $$ display and $ inline math so italic/bold regexes can't mangle
+    # subscripts, superscripts, or multiply signs inside them.
+    _math_store: list = []
+
+    def _save(m: re.Match) -> str:  # type: ignore[type-arg]
+        idx = len(_math_store)
+        _math_store.append(m.group(0))
+        return f'\x00M{idx}\x00'
+
+    t = re.sub(r'\$\$[\s\S]+?\$\$', _save, t)   # display math first
+    t = re.sub(r'\$[^$\n]+?\$', _save, t)         # then inline math
+
     # Remove markdown headings (keep heading text)
     t = re.sub(r'^\s*#{1,6}\s+', '', t, flags=re.MULTILINE)
     # Remove bold/italic markers
@@ -463,6 +519,11 @@ def _md_to_plain(md: str) -> str:
     # Remove list markers at beginning of lines (keep text)
     t = re.sub(r'^[\-\*]\s+', '• ', t, flags=re.MULTILINE)
     t = re.sub(r'^\d+\.\s+', '• ', t, flags=re.MULTILINE)
+
+    # ── Restore LaTeX ─────────────────────────────────────────────────────
+    for i, expr in enumerate(_math_store):
+        t = t.replace(f'\x00M{i}\x00', expr)
+
     return t.strip()
 
 

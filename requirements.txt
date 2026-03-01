@@ -15,6 +15,7 @@ openai
 azure-identity
 
 # Observability & Tracing
+opentelemetry-semantic-conventions<1.0.0
 opentelemetry-exporter-otlp-proto-grpc
 
 # Image Generation & TTS

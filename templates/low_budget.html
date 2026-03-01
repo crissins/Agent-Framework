@@ -45,6 +45,8 @@ body {
   box-shadow: -6px 0 0 rgba(0,0,0,.2), 0 3px 18px rgba(0,0,0,.15);
   position: relative;
   padding: 0;
+  height: 1123px;
+  overflow: hidden;
 }
 
 .cover-stripe {
@@ -138,7 +140,8 @@ body {
   background: var(--page-bg);
   box-shadow: -6px 0 0 rgba(0,0,0,.18), 0 2px 14px rgba(0,0,0,.12);
   position: relative;
-  min-height: 960px;
+  height: 1123px; /* A4 fixed — prevents footer overlap */
+  overflow: hidden;
   display: flex; flex-direction: column;
 }
 
@@ -166,6 +169,7 @@ body {
 .page-body {
   padding: 22px 44px 64px;
   flex: 1;
+  overflow: hidden; /* clips content before it reaches footer */
 }
 
 /* ── Running footer ─────────────────────────────────────────────────── */
@@ -389,8 +393,9 @@ body {
 .img-block {
   margin: 16px 0;
   border: 1px solid var(--rule);
+  overflow: hidden;
 }
-.img-block img { width: 100%; display: block; }
+.img-block img { width: 100%; display: block; max-height: 340px; object-fit: cover; }
 .img-caption {
   font-family: var(--f-body);
   font-size: .7rem; font-style: italic;

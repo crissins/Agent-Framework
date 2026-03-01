@@ -127,6 +127,7 @@ st.session_state.setdefault("batch_running", False)
 st.session_state.setdefault("batch_status", {})       # live status dict from run_batch_parallel
 st.session_state.setdefault("blind_friendly_path", None)
 st.session_state.setdefault("color_friendly_path", None)
+st.session_state.setdefault("enable_tts", True)
 
 # Chat session state
 st.session_state.setdefault("chat_messages", [])  # list of {"role": ..., "content": ...}
@@ -151,7 +152,7 @@ st.session_state.setdefault("pending_generation_source", None)
 async def _run_chat_turn(user_message: str) -> str:
     """Run one chat turn against the conversational agent."""
     if st.session_state.chat_agent is None:
-        st.session_state.chat_agent = await create_chat_agent(use_qwen=True)
+        st.session_state.chat_agent = await create_chat_agent(provider="qwen")
 
     # Use full conversation history (up to 20 exchanges) for better memory
     recent_history = st.session_state.chat_messages[-40:]
@@ -178,60 +179,6 @@ async def _run_chat_turn(user_message: str) -> str:
 VOICE_CLONE_DIR = Path("books") / "voice_clones"
 VOICE_SAMPLE_DIR = VOICE_CLONE_DIR / "samples"
 VOICE_REGISTRY_PATH = VOICE_CLONE_DIR / "voice_registry.json"
-
-_DOTENV_PATH = Path(__file__).parent / ".env"
-
-
-def _save_dotenv(github_token: str, dashscope_key: str, dashscope_region: str,
-                 anthropic_key: str = "", azure_key: str = "",
-                 azure_endpoint: str = "", azure_deployment: str = "") -> str:
-    """Write/update provider keys in .env. Existing unrelated lines are preserved."""
-    managed_keys = {
-        "GITHUB_TOKEN", "DASHSCOPE_API_KEY", "DASHSCOPE_REGION",
-        "ANTHROPIC_API_KEY",
-        "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT_NAME",
-    }
-    new_values = {
-        "GITHUB_TOKEN": github_token.strip(),
-        "DASHSCOPE_API_KEY": dashscope_key.strip(),
-        "DASHSCOPE_REGION": dashscope_region.strip(),
-        "ANTHROPIC_API_KEY": anthropic_key.strip(),
-        "AZURE_OPENAI_API_KEY": azure_key.strip(),
-        "AZURE_OPENAI_ENDPOINT": azure_endpoint.strip(),
-        "AZURE_OPENAI_DEPLOYMENT_NAME": azure_deployment.strip(),
-    }
-
-    existing_lines: list[str] = []
-    if _DOTENV_PATH.exists():
-        existing_lines = _DOTENV_PATH.read_text(encoding="utf-8").splitlines()
-
-    # Rewrite managed keys in-place; remember which ones were updated
-    updated_keys: set[str] = set()
-    out_lines: list[str] = []
-    for line in existing_lines:
-        stripped = line.strip()
-        if stripped.startswith("#") or "=" not in stripped:
-            out_lines.append(line)
-            continue
-        key = stripped.split("=", 1)[0].strip()
-        if key in managed_keys:
-            val = new_values[key]
-            if val:
-                out_lines.append(f'{key}="{val}"')
-            # if empty, drop the line (don't save blank keys)
-            updated_keys.add(key)
-        else:
-            out_lines.append(line)
-
-    # Append keys that weren't already present
-    for key in managed_keys:
-        if key not in updated_keys and new_values[key]:
-            out_lines.append(f'{key}="{new_values[key]}"')
-
-    _DOTENV_PATH.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
-    saved = [k for k in managed_keys if new_values[k]]
-    return f"✅ Saved to .env: {', '.join(sorted(saved))}" if saved else "⚠️ Nothing to save — all fields are empty."
-
 
 def _slugify_name(value: str) -> str:
     cleaned = "".join(c.lower() if c.isalnum() else "_" for c in value.strip())
@@ -435,6 +382,7 @@ def _validate_generation_prereqs(
     use_qwen_models: bool,
     enable_tts: bool,
     voice_clone_profile: dict | None,
+    generate_images: bool = False,
 ) -> bool:
     """Validate API-key prerequisites for selected generation path."""
     model_ok, model_msg = validate_api_keys(use_qwen_models)
@@ -444,7 +392,16 @@ def _validate_generation_prereqs(
 
     needs_dashscope = enable_tts or bool(voice_clone_profile and voice_clone_profile.get("voice"))
     if needs_dashscope and not os.getenv("DASHSCOPE_API_KEY"):
-        st.error("❌ Missing DASHSCOPE_API_KEY required for voice generation / voice cloning.")
+        st.error("\u274c Missing DASHSCOPE_API_KEY required for voice generation / voice cloning.")
+        return False
+
+    # AI image generation also requires DashScope
+    if generate_images and not os.getenv("DASHSCOPE_API_KEY"):
+        st.error(
+            "\u274c Missing DASHSCOPE_API_KEY — required for AI image generation. "
+            "Add it to your Streamlit secrets or .env file, "
+            "or switch Image Source to \u2018DDG Safe Search\u2019 / \u2018None\u2019."
+        )
         return False
 
     return True
@@ -556,21 +513,6 @@ with st.sidebar:
         )
         os.environ["DASHSCOPE_REGION"] = qwen_region
 
-        if st.button("💾 Save to .env", help="Persist keys & region to .env so they load automatically on next start."):
-            msg = _save_dotenv(
-                github_token=_github_key,
-                dashscope_key=_dash_key,
-                dashscope_region=qwen_region,
-                anthropic_key=_anthropic_key,
-                azure_key=_azure_key,
-                azure_endpoint=_azure_ep,
-                azure_deployment=_azure_dep,
-            )
-            if msg.startswith("✅"):
-                st.success(msg)
-            else:
-                st.warning(msg)
-
         # ── Provider selector ────────────────────────────────────────
         _provider_options = [
             ("🐙 GitHub Models",   "github"),
@@ -609,9 +551,16 @@ with st.sidebar:
         elif selected_provider == "qwen":
             qwen_text_model = st.selectbox(
                 "🧠 Text Model",
-                ["qwen-flash", "qwen-plus", "qwen-max", "qwen3-max"],
+                [
+                    "qwen3.5-flash",
+                    "qwen3.5-flash-2026-02-23",
+                    "qwen3.5-35b-a3b",
+                    "qwen3.5-27b",
+                    "qwen3.5-122b-a10b",
+                ],
                 index=0,
-                help="qwen-flash is fastest; qwen-max is highest quality",
+                help="All models have 1 M-token free quota (expires 2026-05-24). "
+                     "qwen3.5-flash is fastest; qwen3.5-122b-a10b is highest quality.",
             )
             qwen_image_model = st.selectbox(
                 "🖼️ Image Model",
@@ -734,11 +683,8 @@ with st.sidebar:
 
     # ── Voice & Narration ───────────────────────────────────────────────
     with st.expander("🔊 Voice & Audio", expanded=True):
-        enable_tts = st.checkbox(
-            "🎙️ Enable Audio Narration",
-            value=True,
-            help="Generate spoken narration for each chapter using Qwen3 TTS-VC",
-        )
+        # Checkbox lives in the main form — read the stored value here
+        enable_tts = st.session_state.get("enable_tts", True)
 
         # ── Cloned-voice option ─────────────────────────────────────────
         _voice_registry = _load_voice_registry()
@@ -916,6 +862,7 @@ with st.sidebar:
                         _save_voice_registry(registry)
                         st.session_state.voice_clone_profile = profile
                         st.success(f"Voice cloned: '{slug_name}'")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"❌ Clone failed: {e}")
 
@@ -945,17 +892,10 @@ with st.sidebar:
 active_clone_profile = st.session_state.voice_clone_profile if use_cloned_voice else None
 
 # ══════════════════════════════════════════════════════════════════════════
-# PAGE SELECTOR — Single Book vs Batch Generation
-# ══════════════════════════════════════════════════════════════════════════
-_page_sel = st.radio(
-    "",
-    ["📚 Single Book", "⚡ Batch Generation"],
-    horizontal=True,
-    label_visibility="collapsed",
-    key="main_page_selector",
-)
+# ══ TABS: Form | Chat | Batch ═══════════════════════════════════════════
+_tab_form, _tab_chat, _tab_batch = st.tabs(["📋 Form", "💬 Chat", "⚡ Batch"])
 
-if _page_sel == "⚡ Batch Generation":
+with _tab_batch:
 
     st.subheader("⚡ Batch Book Generation")
     st.caption(
@@ -1109,155 +1049,190 @@ if _page_sel == "⚡ Batch Generation":
     else:
         st.info("Configure jobs above and click **Run** to start parallel generation.")
 
-    st.stop()  # ← Do NOT run single-book code when batch tab is active
 
 # ══════════════════════════════════════════════════════════════════════════
-# MAIN PAGE — Book Specification
+# FORM TAB
 # ══════════════════════════════════════════════════════════════════════════
-st.subheader("📋 Book Specification")
-c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-with c1:
-    topic = st.text_input("📚 Topic", value="La IA en México 2025")
-with c2:
-    country = st.selectbox("🌎 Country", ["Mexico", "Colombia", "Argentina", "Chile", "Peru", "Brazil", "World wide"])
-with c3:
-    language = st.selectbox("🗣️ Language", ["Spanish", "Portuguese", "English"])
-with c4:
-    target_audience_age = st.slider("👧 Age", 8, 16, 8)
+with _tab_form:
+    st.subheader("📋 Book Specification")
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
+    with c1:
+        topic = st.text_input("📚 Topic", value="La IA en México 2025")
+    with c2:
+        country = st.selectbox("🌎 Country", ["Mexico", "Colombia", "Argentina", "Chile", "Peru", "Brazil", "World wide"])
+    with c3:
+        language = st.selectbox("🗣️ Language", ["Spanish", "Portuguese", "English"])
+    with c4:
+        target_audience_age = st.slider("👧 Age", 8, 16, 8)
 
-c5, c6, c7, c8 = st.columns([2, 2, 1, 2])
-with c5:
-    learning_method = st.selectbox("🧠 Method", ["Scandinavian", "Montessori", "Project-Based"])
-with c6:
-    _genre_options = list(BOOK_GENRES.keys())
-    book_genre = st.selectbox(
-        "📖 Genre",
-        options=_genre_options,
-        index=0,
-        format_func=lambda g: BOOK_GENRES.get(g, g),
-        help=(
-            "**Educational** — curriculum + activities + QR codes (default)\n"
-            "**Poetry** — poem sections, no activities\n"
-            "**Fairy Tale** — narrative story chapters\n"
-            "**Personal Development** — adult non-fiction prose chapters"
-        ),
-        key="book_genre",
+    c5, c6, c7, c8 = st.columns([2, 2, 1, 2])
+    with c5:
+        learning_method = st.selectbox("🧠 Method", ["Scandinavian", "Montessori", "Project-Based"])
+    with c6:
+        _genre_options = list(BOOK_GENRES.keys())
+        book_genre = st.selectbox(
+            "📖 Genre",
+            options=_genre_options,
+            index=0,
+            format_func=lambda g: BOOK_GENRES.get(g, g),
+            help=(
+                "**Educational** — curriculum + activities + QR codes (default)\n"
+                "**Poetry** — poem sections, no activities\n"
+                "**Fairy Tale** — narrative story chapters\n"
+                "**Personal Development** — adult non-fiction prose chapters"
+            ),
+            key="book_genre",
+        )
+    with c7:
+        num_chapters = st.slider("📑 Ch.", 2, 12, 2)
+    with c8:
+        pages_per_chapter = st.slider("📄 Pages/Ch", 1, 20, 1)
+
+    if book_genre != "educational":
+        _genre_desc = {
+            "poetry":               "Each chapter = a thematic poem section. No activities, QR codes, or curriculum blocks.",
+            "fairy_tale":           "Each chapter = immersive narrative prose. No educational structure.",
+            "personal_development": "Each chapter = self-help non-fiction prose (hook → insight → framework → reflection).",
+        }.get(book_genre, "")
+        st.info(f"{BOOK_GENRES[book_genre]} — {_genre_desc}", icon="ℹ️")
+
+    # ── Accessibility ──────────────────────────────────────────────────
+    _acca, _accb, _accc = st.columns(3)
+    with _acca:
+        auto_color_friendly = st.checkbox(
+            "🎨 Generate Color-Friendly Version",
+            value=False,
+            help="After generation, automatically re-exports the HTML with a WCAG 2.1 AA "
+                 "colorblind-safe palette (blues/ambers/teals instead of red/green).",
+            key="auto_color_friendly",
+        )
+    with _accb:
+        enable_tts = st.checkbox(
+            "🎙️ Enable Audio Narration",
+            value=st.session_state.get("enable_tts", True),
+            help="Generate spoken narration for each chapter using Qwen3 TTS-VC",
+            key="enable_tts",
+        )
+    with _accc:
+        auto_blind_friendly = st.checkbox(
+            "👁️ Generate Blind-Friendly Scripts",
+            value=False,
+            help="Adapts each chapter for blind listeners BEFORE audio generation, "
+                 "so spoken narration uses the accessible version.",
+            key="auto_blind_friendly",
+        )
+
+    # ── Visual Template & Palette ──────────────────────────────────────
+    _tc8, _tc9 = st.columns(2)
+    with _tc8:
+        _tmpl_choices = template_choices()
+        _tmpl_option_ids = [t_id for _, t_id in _tmpl_choices]
+        template_id = st.selectbox(
+            "🎨 Visual Template",
+            options=_tmpl_option_ids,
+            index=0,
+            format_func=lambda tid: next(
+                (label for label, t_id in _tmpl_choices if t_id == tid), tid
+            ),
+            help="Controls page layout, borders, ornaments, fonts, and colour scheme. "
+                 "Each template is a completely different visual style — not just a colour change. "
+                 "'Auto' picks the best template for your topic.",
+            key="main_template_id",
+        )
+        if template_id != "auto":
+            _tmpl_info = get_template(template_id)
+            st.caption(f"{_tmpl_info.emoji} **{_tmpl_info.name}** — {_tmpl_info.description}")
+        else:
+            st.caption("🤖 AI will choose the best template for your topic.")
+    with _tc9:
+        _PALETTE_OPTIONS = {
+            "auto": "🤖 Auto (based on topic)",
+            "pal-naranja": "🟠 Naranja / Orange",
+            "pal-azul": "🔵 Azul / Blue",
+            "pal-rojo": "🔴 Rojo / Red",
+            "pal-rosa": "🌸 Rosa / Pink",
+            "pal-negro": "🖤 Negro / Dark",
+            "pal-olivo": "🌿 Olivo / Olive Green",
+            "pal-arcoiris": "🌈 Arcoíris / Rainbow",
+            "pal-halloween": "🎃 Halloween",
+            "pal-navidad": "🎄 Navidad / Christmas",
+            "pal-san-valentin": "💕 San Valentín",
+        }
+        palette_id = st.selectbox(
+            "🎨 Color Palette",
+            options=list(_PALETTE_OPTIONS.keys()),
+            index=0,
+            format_func=lambda p: _PALETTE_OPTIONS.get(p, p),
+            help="Override the automatic color palette. "
+                 "Only applies to the Educational template — "
+                 "specialty templates (Horror, Fantasy, etc.) use their own fixed palette.",
+            key="main_palette_id",
+        )
+        if template_id not in ("auto", "educational"):
+            st.caption("⚠️ Palette is fixed by this template's visual style.")
+        elif palette_id == "auto":
+            st.caption("🤖 Color palette chosen automatically from your topic.")
+        else:
+            st.caption(f"✅ Using **{_PALETTE_OPTIONS.get(palette_id, palette_id)}** palette.")
+
+    st.divider()
+    _gen_f1, _gen_f2 = st.columns(2)
+    with _gen_f1:
+        generate_full_clicked = st.button("🚀 Generate Full Book", key="gen_full_form")
+    with _gen_f2:
+        generate_audio_only_clicked = st.button("🎧 Generate Audiobook Only", key="gen_audio_form")
+
+# ══════════════════════════════════════════════════════════════════════════
+# CHAT TAB
+# ══════════════════════════════════════════════════════════════════════════
+with _tab_chat:
+    st.caption(
+        "Describe your book idea. The assistant will decide all parameters "
+        "(topic, age, country, chapters, language, method) and trigger generation automatically."
     )
-with c7:
-    num_chapters = st.slider("📑 Ch.", 2, 12, 2)
-with c8:
-    pages_per_chapter = st.slider("📄 Pages/Ch", 1, 20, 1)
+    if not st.session_state.chat_messages:
+        st.info("💡 Example: 'Write a 6-chapter maths book for 10-year-olds in Mexico in Spanish'")
 
-if book_genre != "educational":
-    _genre_desc = {
-        "poetry":               "Each chapter = a thematic poem section. No activities, QR codes, or curriculum blocks.",
-        "fairy_tale":           "Each chapter = immersive narrative prose. No educational structure.",
-        "personal_development": "Each chapter = self-help non-fiction prose (hook → insight → framework → reflection).",
-    }.get(book_genre, "")
-    st.info(f"{BOOK_GENRES[book_genre]} — {_genre_desc}", icon="ℹ️")
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-# ── Visual Template & Palette ────────────────────────────────────────────
-_tc8, _tc9 = st.columns(2)
-with _tc8:
-    _tmpl_choices = template_choices()
-    _tmpl_option_ids = [t_id for _, t_id in _tmpl_choices]
-    template_id = st.selectbox(
-        "🎨 Visual Template",
-        options=_tmpl_option_ids,
-        index=0,
-        format_func=lambda tid: next(
-            (label for label, t_id in _tmpl_choices if t_id == tid), tid
-        ),
-        help="Controls page layout, borders, ornaments, fonts, and colour scheme. "
-             "Each template is a completely different visual style — not just a colour change. "
-             "'Auto' picks the best template for your topic.",
-        key="main_template_id",
-    )
-    if template_id != "auto":
-        _tmpl_info = get_template(template_id)
-        st.caption(f"{_tmpl_info.emoji} **{_tmpl_info.name}** — {_tmpl_info.description}")
+    user_prompt = st.chat_input("Type your message...", key="chat_input_tab")
+    if user_prompt:
+        st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
+        with st.chat_message("user"):
+            st.markdown(user_prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                try:
+                    assistant_text = asyncio.run(_run_chat_turn(user_prompt))
+                except Exception as e:
+                    assistant_text = f"❌ Chat error: {e}"
+                st.markdown(assistant_text)
+        st.session_state.chat_messages.append({"role": "assistant", "content": assistant_text})
+        parsed = parse_book_request_from_response(assistant_text)
+        if parsed:
+            st.session_state.chat_book_data = parsed
+            parsed_signature = json.dumps(parsed, ensure_ascii=False, sort_keys=True)
+            if parsed_signature != st.session_state.chat_last_parsed_signature:
+                st.session_state.chat_last_parsed_signature = parsed_signature
+                requested_mode = str(parsed.get("generation_mode", "full")).strip().lower()
+                if requested_mode not in {"full", "audio_only"}:
+                    requested_mode = "full"
+                st.session_state.pending_generation_mode = requested_mode
+                st.session_state.pending_generation_source = "chat"
+        st.rerun()
+
+    if st.session_state.chat_book_data:
+        st.success("✅ Book parameters captured — ready to generate.")
+        _gen_c1, _gen_c2 = st.columns(2)
+        with _gen_c1:
+            generate_full_from_chat = st.button("🚀 Generate Full Book", key="gen_full_chat")
+        with _gen_c2:
+            generate_audio_from_chat = st.button("🎧 Audiobook Only", key="gen_audio_chat")
     else:
-        st.caption("🤖 AI will choose the best template for your topic.")
-with _tc9:
-    _PALETTE_OPTIONS = {
-        "auto": "🤖 Auto (based on topic)",
-        "pal-naranja": "🟠 Naranja / Orange",
-        "pal-azul": "🔵 Azul / Blue",
-        "pal-rojo": "🔴 Rojo / Red",
-        "pal-rosa": "🌸 Rosa / Pink",
-        "pal-negro": "🖤 Negro / Dark",
-        "pal-olivo": "🌿 Olivo / Olive Green",
-        "pal-arcoiris": "🌈 Arcoíris / Rainbow",
-        "pal-halloween": "🎃 Halloween",
-        "pal-navidad": "🎄 Navidad / Christmas",
-        "pal-san-valentin": "💕 San Valentín",
-    }
-    palette_id = st.selectbox(
-        "🎨 Color Palette",
-        options=list(_PALETTE_OPTIONS.keys()),
-        index=0,
-        format_func=lambda p: _PALETTE_OPTIONS.get(p, p),
-        help="Override the automatic color palette. "
-             "Only applies to the Educational template — "
-             "specialty templates (Horror, Fantasy, etc.) use their own fixed palette.",
-        key="main_palette_id",
-    )
-    if template_id not in ("auto", "educational"):
-        st.caption("⚠️ Palette is fixed by this template's visual style.")
-    elif palette_id == "auto":
-        st.caption("🤖 Color palette chosen automatically from your topic.")
-    else:
-        st.caption(f"✅ Using **{_PALETTE_OPTIONS.get(palette_id, palette_id)}** palette.")
-
-st.divider()
-
-# ══════════════════════════════════════════════════════════════════════════
-# MAIN PAGE — Chat Window
-# ══════════════════════════════════════════════════════════════════════════
-st.subheader("💬 Chat with the Book Assistant")
-st.caption("Describe your book idea and the assistant will guide the full specification. Or skip and use the form above.")
-
-if not st.session_state.chat_messages:
-    st.info("💡 Example: 'I want a book about ocean animals for 9-year-olds in Mexico'")
-
-for msg in st.session_state.chat_messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-user_prompt = st.chat_input("Type your message...")
-if user_prompt:
-    st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
-    with st.chat_message("user"):
-        st.markdown(user_prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            try:
-                assistant_text = asyncio.run(_run_chat_turn(user_prompt))
-            except Exception as e:
-                assistant_text = f"❌ Chat error: {e}"
-            st.markdown(assistant_text)
-
-    st.session_state.chat_messages.append({"role": "assistant", "content": assistant_text})
-
-    parsed = parse_book_request_from_response(assistant_text)
-    if parsed:
-        st.session_state.chat_book_data = parsed
-        parsed_signature = json.dumps(parsed, ensure_ascii=False, sort_keys=True)
-        if parsed_signature != st.session_state.chat_last_parsed_signature:
-            st.session_state.chat_last_parsed_signature = parsed_signature
-            requested_mode = str(parsed.get("generation_mode", "full")).strip().lower()
-            if requested_mode not in {"full", "audio_only"}:
-                requested_mode = "full"
-            st.session_state.pending_generation_mode = requested_mode
-            st.session_state.pending_generation_source = "chat"
-
-    st.rerun()
-
-if st.session_state.chat_book_data:
-    st.success("✅ Request captured from chat. Generation will use chat options.")
-
-st.divider()
+        generate_full_from_chat = False
+        generate_audio_from_chat = False
 
 def _make_export_relative_path(img_path: str) -> str:
     """Convert an image path to be relative to the export directory.
@@ -1317,7 +1292,13 @@ _COST_PER_1M_OUTPUT: dict[str, float] = {
     "gpt-4o": 10.00,
     "Meta-Llama-3.1-70B-Instruct": 0.0,
     "Mistral-large": 0.0,
-    # Qwen / Alibaba Cloud
+    # Qwen / Alibaba Cloud — qwen3.5 series (free quota until 2026-05-24)
+    "qwen3.5-flash": 0.0,
+    "qwen3.5-flash-2026-02-23": 0.0,
+    "qwen3.5-35b-a3b": 0.0,
+    "qwen3.5-27b": 0.0,
+    "qwen3.5-122b-a10b": 0.0,
+    # Legacy Qwen aliases (no free quota)
     "qwen-flash": 0.15,
     "qwen-plus": 0.40,
     "qwen-max": 2.00,
@@ -1517,6 +1498,10 @@ async def generate_book_async(
                             print(f"✅ Image {idx+1} generated for chapter: {chapter.chapter_title}")
                         else:
                             print(f"⚠️ Failed to generate image {idx+1} for chapter: {chapter.chapter_title}")
+                            st.warning(
+                                f"⚠️ Image {idx+1} for '{chapter.chapter_title}' could not be generated. "
+                                "Check that DASHSCOPE_API_KEY is valid and your account has image quota."
+                            )
 
                 # DDG safe-search images (alternative to AI generation)
                 if use_ddg_images and images_per_chapter and images_per_chapter > 0:
@@ -1541,6 +1526,10 @@ async def generate_book_async(
                             print(f"✅ DDG Image {idx+1} found for chapter: {chapter.chapter_title}")
                         else:
                             print(f"⚠️ No DDG image found {idx+1} for chapter: {chapter.chapter_title}")
+                            st.warning(
+                                f"⚠️ No image found via DuckDuckGo for '{chapter.chapter_title}' "
+                                "(DuckDuckGo may be rate-limiting). Chapter will render without an image."
+                            )
 
                 # YouTube video search
                 if enable_video_search:
@@ -1839,17 +1828,11 @@ async def generate_audio_book_only_async(
         return None, None
 
 
-gen_col1, gen_col2 = st.columns(2)
-with gen_col1:
-    generate_full_clicked = st.button("🚀 Generate Full Book")
-with gen_col2:
-    generate_audio_only_clicked = st.button("🎧 Generate Audiobook Only")
-
 pending_mode = st.session_state.pending_generation_mode
 pending_source = st.session_state.pending_generation_source
 
-run_full_generation = generate_full_clicked or pending_mode == "full"
-run_audio_only_generation = generate_audio_only_clicked or pending_mode == "audio_only"
+run_full_generation = generate_full_clicked or generate_full_from_chat or pending_mode == "full"
+run_audio_only_generation = generate_audio_only_clicked or generate_audio_from_chat or pending_mode == "audio_only"
 
 generation_source = pending_source if pending_mode else "form"
 if pending_mode:
@@ -1893,6 +1876,7 @@ if run_full_generation:
         use_qwen_models=runtime["use_qwen_models"],
         enable_tts=runtime["enable_tts"],
         voice_clone_profile=active_clone_profile,
+        generate_images=runtime["generate_images"],
     ):
         st.stop()
 
@@ -1937,6 +1921,70 @@ if run_full_generation:
                 )
             )
             _progress_ph.empty()
+
+            # ── Image generation for genre books (same logic as educational) ──
+            if full_chapters and (runtime["generate_images"] or runtime["use_ddg_images"]):
+                _imgs_per_ch = runtime["images_per_chapter"]
+                _img_ph = st.empty()
+                for _i, _ch in enumerate(full_chapters):
+                    if not _imgs_per_ch:
+                        break
+                    _ch_folder = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in _ch.chapter_title)
+                    _ch_folder = _ch_folder.replace(' ', '_')[:50]
+                    _ch.generated_images = []
+                    _placeholder_descs = _ch.image_placeholders if hasattr(_ch, 'image_placeholders') else []
+                    # Extract [IMAGE: ...] descriptions from markdown if not yet set
+                    if not _placeholder_descs:
+                        import re as _re
+                        _placeholder_descs = _re.findall(r'\[IMAGE:\s*([^\]]+)\]', _ch.markdown_content or '')
+                        _ch.image_placeholders = _placeholder_descs
+
+                    if runtime["generate_images"]:
+                        _img_ph.info(f"🎨 Generating images for chapter {_i+1}/{len(full_chapters)}: {_ch.chapter_title[:40]}...")
+                        for _idx in range(_imgs_per_ch):
+                            _img_title = _placeholder_descs[_idx] if _idx < len(_placeholder_descs) else f"{_ch.chapter_title} illustration {_idx+1}"
+                            _img = generate_chapter_image(
+                                title=_img_title,
+                                summary=_img_title,
+                                output_dir=str(images_dir_path),
+                                chapter_name=_ch_folder,
+                                language=request.language,
+                                country=request.country,
+                                audience_age=request.target_audience_age,
+                                use_qwen_text=runtime["use_qwen_models"],
+                                text_model=runtime["qwen_text_model"],
+                                image_model=qwen_image_model,
+                                art_style=art_style,
+                            )
+                            if _img:
+                                _ch.generated_images.append(_img)
+                                print(f"✅ Image {_idx+1} generated for genre chapter: {_ch.chapter_title}")
+                            else:
+                                print(f"⚠️ Failed to generate image {_idx+1} for genre chapter: {_ch.chapter_title}")
+                                st.warning(f"⚠️ Image {_idx+1} for '{_ch.chapter_title}' could not be generated. Check DASHSCOPE_API_KEY and image quota.")
+
+                    elif runtime["use_ddg_images"]:
+                        _img_ph.info(f"🔍 Searching images for chapter {_i+1}/{len(full_chapters)}: {_ch.chapter_title[:40]}...")
+                        _ddg_dir = str(images_dir_path / _ch_folder)
+                        for _idx in range(_imgs_per_ch):
+                            _query = _placeholder_descs[_idx] if _idx < len(_placeholder_descs) else f"{_ch.chapter_title} illustration"
+                            _ddg_img = asyncio.run(search_and_download_image(
+                                query=_query,
+                                output_dir=_ddg_dir,
+                                language=request.language.lower()[:2],
+                                country=request.country,
+                                safesearch="moderate",
+                            ))
+                            if _ddg_img:
+                                _ch.generated_images.append(_ddg_img)
+                            else:
+                                st.warning(f"⚠️ No DDG image found for '{_ch.chapter_title}' — chapter will render without image.")
+
+                    _ch.markdown_content = _embed_images_in_markdown(
+                        _ch.markdown_content,
+                        _ch.generated_images,
+                    )
+                _img_ph.empty()
         else:
             curriculum, full_chapters = asyncio.run(
                 generate_book_async(
@@ -2064,7 +2112,55 @@ if run_full_generation:
                 if ch.audio_narration is not None
             ]
             st.session_state.audio_output_dir = str(audio_dir_path) if runtime["enable_tts"] else None
-            
+
+            # ─ Auto-apply accessibility options if pre-selected ────────────────────
+            if auto_color_friendly and st.session_state.html_path and os.path.exists(st.session_state.html_path):
+                with st.spinner("🎨 Applying color-friendly palette..."):
+                    _cf_path = _apply_color_friendly_css(st.session_state.html_path)
+                    if _cf_path:
+                        st.session_state.color_friendly_path = _cf_path
+                        st.success("✅ Color-friendly HTML ready!")
+
+            if auto_blind_friendly and st.session_state.full_chapters:
+                with st.spinner("👁️ Adapting chapters for blind-friendly accessibility..."):
+                    _bf_scripts = [ch.markdown_content or "" for ch in st.session_state.full_chapters]
+                    _bf_titles  = [ch.chapter_title for ch in st.session_state.full_chapters]
+                    _bf_req     = (st.session_state.output_data or {}).get("book_request", {})
+                    _bf_adapted = asyncio.run(
+                        review_full_audiobook_for_blind_friendly(
+                            scripts=_bf_scripts,
+                            chapter_titles=_bf_titles,
+                            language=_bf_req.get("language", language),
+                            target_age=int(_bf_req.get("target_audience_age", target_audience_age)),
+                            use_qwen=use_qwen_models,
+                        )
+                    )
+                    _bf_path = (
+                        str(st.session_state.md_path).replace(".md", "_blind_friendly.md")
+                        if st.session_state.md_path
+                        else "books/libro_blind_friendly.md"
+                    )
+                    Path(_bf_path).parent.mkdir(parents=True, exist_ok=True)
+                    with open(_bf_path, "w", encoding="utf-8") as _bf_f:
+                        _bf_f.write("# Blind-Friendly Edition\n\n")
+                        for _t, _s in zip(_bf_titles, _bf_adapted):
+                            # Strip any leading heading / title echo the LLM may have added
+                            _s_lines = _s.strip().splitlines()
+                            _t_norm = re.sub(r'[^\w\s]', '', _t.lower()).strip()
+                            while _s_lines:
+                                _l = _s_lines[0].strip()
+                                _l_text = re.sub(r'^#+\s*', '', _l)  # strip leading #
+                                _l_norm = re.sub(r'[^\w\s]', '', _l_text.lower()).strip()
+                                if (_l_norm == _t_norm or _t_norm in _l_norm
+                                        or not _l_norm):  # also skip blank first lines
+                                    _s_lines.pop(0)
+                                else:
+                                    break
+                            _s_clean = "\n".join(_s_lines).strip()
+                            _bf_f.write(f"## {_t}\n\n{_s_clean}\n\n---\n\n")
+                    st.session_state.blind_friendly_path = _bf_path
+                    st.success("✅ Blind-friendly scripts ready!")
+
             print(f"\n✅ Book generated successfully in organized folders!\n")
             st.success("✅ Book generated successfully!")
             
@@ -2115,6 +2211,7 @@ if run_audio_only_generation:
         use_qwen_models=runtime["use_qwen_models"],
         enable_tts=runtime["enable_tts"],
         voice_clone_profile=active_clone_profile,
+        generate_images=runtime.get("generate_images", False),
     ):
         st.stop()
 
@@ -2309,19 +2406,6 @@ if st.session_state.book_generated and st.session_state.curriculum:
     else:
         _m7.metric("🔊 Audio Files", "—")
 
-    # === Inline PDF preview ===
-    if st.session_state.pdf_path and os.path.exists(st.session_state.pdf_path):
-        st.subheader("📄 PDF Preview")
-        import base64
-        with open(st.session_state.pdf_path, "rb") as pdf_file:
-            pdf_bytes = pdf_file.read()
-            b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-            pdf_display = (
-                f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
-                f'width="100%" height="700" type="application/pdf"></iframe>'
-            )
-            st.markdown(pdf_display, unsafe_allow_html=True)
-
     # === Download Buttons ===
     st.subheader("📥 Download")
     colA, colB, colC, colD = st.columns(4)
@@ -2365,55 +2449,9 @@ if st.session_state.book_generated and st.session_state.curriculum:
                     mime="application/pdf"
                 )
 
-    # === Accessibility Options ===
-    st.subheader("♿ Accessibility Options")
-    _acc_col1, _acc_col2 = st.columns(2)
-    with _acc_col1:
-        if st.button("🎨 Generate Color-Friendly Version",
-                     help="Re-exports the HTML with a WCAG 2.1 AA colorblind-safe palette (blues/ambers/teals instead of red/green)"):
-            if st.session_state.html_path and os.path.exists(st.session_state.html_path):
-                _cf_path = _apply_color_friendly_css(st.session_state.html_path)
-                if _cf_path:
-                    st.session_state.color_friendly_path = _cf_path
-                    st.success("✅ Color-friendly HTML ready!")
-                    st.rerun()
-            else:
-                st.warning("No HTML found. Run a full book generation first.")
-    with _acc_col2:
-        if st.button("👁️ Generate Blind-Friendly Scripts",
-                     help="Runs the AudiobookQA agent to adapt all chapter content for blind and visually-impaired listeners"):
-            if st.session_state.full_chapters:
-                with st.spinner("♿ Adapting chapters for blind-friendly accessibility..."):
-                    _scripts = [ch.markdown_content or "" for ch in st.session_state.full_chapters]
-                    _titles = [ch.chapter_title for ch in st.session_state.full_chapters]
-                    _req_data = (st.session_state.output_data or {}).get("book_request", {})
-                    _lang = _req_data.get("language", "Spanish")
-                    _age = int(_req_data.get("target_audience_age", 10))
-                    _adapted = asyncio.run(
-                        review_full_audiobook_for_blind_friendly(
-                            scripts=_scripts,
-                            chapter_titles=_titles,
-                            language=_lang,
-                            target_age=_age,
-                            use_qwen=use_qwen_models,
-                        )
-                    )
-                    _bf_path = (str(st.session_state.md_path).replace(".md", "_blind_friendly.md")
-                                if st.session_state.md_path
-                                else "books/libro_blind_friendly.md")
-                    Path(_bf_path).parent.mkdir(parents=True, exist_ok=True)
-                    with open(_bf_path, "w", encoding="utf-8") as _bf_f:
-                        _bf_f.write("# Blind-Friendly Edition\n\n")
-                        for _t, _s in zip(_titles, _adapted):
-                            _bf_f.write(f"## {_t}\n\n{_s}\n\n---\n\n")
-                    st.session_state.blind_friendly_path = _bf_path
-                    st.success("✅ Blind-friendly scripts ready!")
-                    st.rerun()
-            else:
-                st.warning("No chapters found. Generate a book first.")
-
-    # Download buttons for accessibility outputs
+    # === Accessibility Downloads ===
     if st.session_state.color_friendly_path or st.session_state.blind_friendly_path:
+        st.subheader("♿ Accessibility Outputs")
         _dl_col1, _dl_col2 = st.columns(2)
         with _dl_col1:
             if st.session_state.color_friendly_path and os.path.exists(st.session_state.color_friendly_path):
@@ -2508,7 +2546,27 @@ if st.session_state.book_generated and st.session_state.curriculum:
                     )
 
             st.divider()
-            st.markdown(ch.markdown_content)
+            # Sanitize markdown for Streamlit display — strips markers that
+            # look broken (image placeholders, video tags, raw Windows paths,
+            # and unmatched $ signs that confuse Streamlit's LaTeX renderer).
+            def _sanitize_md_for_display(text: str) -> str:
+                if not text:
+                    return ""
+                import re as _re
+                # Remove [IMAGE: ...] placeholders
+                text = _re.sub(r'\[IMAGE:[^\]]*\]', '', text)
+                # Remove [VIDEO: ...] placeholders
+                text = _re.sub(r'\[VIDEO:[^\]]*\]', '', text)
+                # Remove 🎬 video markers (various forms LLM generates)
+                text = _re.sub(r'[\U0001F3AC]\s*\*{0,2}[Vv]ideo\*{0,2}:?[^\n]*', '', text)
+                # Remove markdown images referencing local file paths — shown separately via st.image()
+                text = _re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)
+                # Remove lines that only contain asterisks / dashes (decorative separators that render oddly)
+                text = _re.sub(r'^\s*[\*\-]{3,}\s*$', '', text, flags=_re.MULTILINE)
+                # Strip trailing whitespace per line and collapse 3+ blank lines
+                text = _re.sub(r'\n{3,}', '\n\n', text)
+                return text.strip()
+            st.markdown(_sanitize_md_for_display(ch.markdown_content))
 
             # Generated images
             if hasattr(ch, 'generated_images') and ch.generated_images:

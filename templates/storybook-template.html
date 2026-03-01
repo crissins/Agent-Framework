@@ -38,7 +38,8 @@ body {
   max-width: 100%;
   margin: 0 auto 20px;
   background: var(--page-bg);
-  min-height: 900px;
+  height: 1123px;
+  overflow: hidden;
   box-shadow: -7px 0 0 rgba(0,0,0,.2), 0 4px 24px rgba(0,0,0,.15);
   display: flex;
   flex-direction: column;
@@ -128,7 +129,8 @@ body {
   margin: 0 auto 20px;
   background: var(--page-bg);
   box-shadow: -7px 0 0 rgba(0,0,0,.18), 0 3px 18px rgba(0,0,0,.12);
-  min-height: 900px;
+  height: 1123px; /* A4 fixed — prevents footer overlap */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -136,6 +138,7 @@ body {
 
 .page-body {
   flex: 1;
+  overflow: hidden; /* clips content before it reaches footer */
   padding: var(--pad-top) var(--pad-x) var(--pad-bot);
 }
 
@@ -309,6 +312,7 @@ body {
   border: 1px solid #F0ECE8;
   overflow: hidden;
   width: 100%;
+  max-height: 340px;
   position: relative;
 }
 

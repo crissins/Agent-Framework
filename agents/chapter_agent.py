@@ -13,20 +13,47 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def create_chapter_agent(use_qwen: bool = False, model_id: str | None = None) -> ChatAgent:
+_MATH_KEYWORDS = [
+    "matemáticas", "matematicas", "math", "álgebra", "algebra",
+    "geometría", "geometria", "geometry", "fraccion", "fracciones",
+    "fractions", "aritmética", "aritmetica", "arithmetic",
+    "cálculo", "calculo", "calculus", "trigonometría", "trigonometria",
+    "estadística", "estadistica", "statistics", "ecuacion", "ecuaciones",
+    "equations", "operaciones", "operations", "numeros", "números",
+    "numbers", "decimales", "decimals", "porcentajes", "percentages",
+    "área", "area", "perimetro", "perímetro", "perimeter", "volumen",
+    "volume", "probabilidad", "probability",
+]
+
+
+def _is_math_topic(*texts: str) -> bool:
+    """Return True if any of *texts* contains a maths-related keyword."""
+    combined = " ".join(texts).lower()
+    return any(kw in combined for kw in _MATH_KEYWORDS)
+
+
+async def create_chapter_agent(
+    use_qwen: bool = False,
+    model_id: str | None = None,
+    provider: str | None = None,
+) -> ChatAgent:
     """
     Create a chapter writing agent using either GitHub Models or Qwen.
-    
+
     Args:
-        use_qwen: If True, use Qwen models via DashScope; if False, use GitHub Models
-    
+        use_qwen:  Legacy bool — True → Qwen, False → GitHub (ignored when provider is set)
+        model_id:  Override the default model ID.
+        provider:  Explicit provider string: 'github' | 'qwen' | 'claude' | 'azure'.
+                   When supplied this takes priority over use_qwen AND the MODEL_PROVIDER
+                   env-var, which prevents cross-thread contamination in batch runs.
+
     Implements Microsoft Agent Framework best practices:
     - Uses OpenAIChatClient with specified endpoint
     - Clear, minimal instructions to avoid hallucinations
     - Respects token limits and learning method
     - Supports both development and production workflows
     """
-    config = get_model_config(use_qwen)
+    config = get_model_config(use_qwen, provider=provider)
     resolved_model_id = model_id if model_id else config.get("model_id")
     client = OpenAIChatClient(
         api_key=os.getenv(config["api_key_env"], ""),
@@ -141,6 +168,32 @@ async def generate_chapter(
         f"Target approximately {context.get('pages_per_chapter', 5)} pages. Each section should be "
         f"substantial and detailed \u2014 not just 1-2 sentences. Use examples, mini-stories, and "
         f"real-world connections to bring the content alive.\n\n"
+    )
+
+    # ── Math-specific LaTeX rules (injected when topic is maths) ────────
+    topic_str   = context.get('topic', '')
+    subject_str = outline.title + " " + outline.summary
+    if _is_math_topic(topic_str, subject_str):
+        prompt += (
+            f"### MATHEMATICS FORMATTING RULES ###\n"
+            f"This is a MATHEMATICS chapter. You MUST follow ALL of these rules:\n"
+            f"1. Use LaTeX for EVERY number operation, formula, fraction, equation, or "
+            f"mathematical expression — NO plain text like '1/2' or '3x4'.\n"
+            f"2. Use INLINE math `$...$` for expressions that appear inside sentences: "
+            f"   e.g. 'Tenemos $\\frac{{1}}{{2}}$ de la parcela restante, "
+            f"es decir $\\frac{{3}}{{6}} = \\frac{{1}}{{2}}$'.\n"
+            f"3. Use DISPLAY math `$$...$$` ONLY for standalone highlighted key formulas. "
+            f"   NEVER place more than 2 display equations consecutively without text between them.\n"
+            f"4. Each worked example MUST show EVERY step with LaTeX:\n"
+            f"   $\\frac{{1}}{{2}} + \\frac{{1}}{{4}} = \\frac{{2}}{{4}} + \\frac{{1}}{{4}} = \\frac{{3}}{{4}}$\n"
+            f"5. Include at least 5 fully solved practice problems with LaTeX in each chapter, "
+            f"   using Mexican everyday contexts (market prices, recipes, field areas, sharing food).\n"
+            f"6. Use LaTeX for list items that contain numbers: "
+            f"   '• $3 \\times 5 = 15$ tamales en total'\n"
+            f"\n"
+        )
+
+    prompt += (
         f"### LANGUAGE REQUIREMENT ###\n"
         f"Write ENTIRELY in {context['language']}. Every heading, paragraph, question, and instruction "
         f"MUST be in {context['language']}. Use culturally appropriate references for {context['country']}."
