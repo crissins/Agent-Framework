@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +48,7 @@ from agents.chat_agent import create_chat_agent, parse_book_request_from_respons
 from agents.voice_clone_agent import create_voice as create_cloned_voice
 from agents.voice_clone_agent import narrate_chapter_vc
 from agents.audio_book_script_agent import generate_audio_script, prepare_script_for_tts
+from agents.audiobook_qa_agent import review_full_audiobook_for_blind_friendly
 from agents.voice_curriculum_agent import create_voice_curriculum_agent, generate_voice_curriculum
 from agents.voice_chapter_agent import create_voice_chapter_agent, generate_voice_chapter
 
@@ -109,6 +111,11 @@ st.session_state.setdefault("curriculum", None)
 st.session_state.setdefault("full_chapters", None)
 st.session_state.setdefault("audio_narrations", [])
 st.session_state.setdefault("audio_output_dir", None)
+st.session_state.setdefault("gen_time", None)
+st.session_state.setdefault("gen_tokens_est", None)
+st.session_state.setdefault("gen_model", None)
+st.session_state.setdefault("blind_friendly_path", None)
+st.session_state.setdefault("color_friendly_path", None)
 
 # Chat session state
 st.session_state.setdefault("chat_messages", [])  # list of {"role": ..., "content": ...}
@@ -405,6 +412,11 @@ def _resolve_runtime_options(parsed_chat_data: dict | None, defaults: dict) -> d
     if parsed_template and isinstance(parsed_template, str):
         resolved["template_id"] = parsed_template.strip().lower()
 
+    # Palette ID from chat (optional — only meaningful for educational template)
+    parsed_palette = parsed_chat_data.get("palette_id")
+    if parsed_palette and isinstance(parsed_palette, str):
+        resolved["palette_id"] = parsed_palette.strip().lower()
+
     return resolved
 
 
@@ -600,12 +612,12 @@ with st.sidebar:
             qwen_text_model = st.selectbox(
                 "🧠 Text Model",
                 [
-                    "claude-3-5-haiku-20241022",
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-7-sonnet-20250219",
+                    "claude-haiku-4-5",
+                    "claude-sonnet-4-6",
+                    "claude-opus-4-6",
                 ],
                 index=0,
-                help="Haiku is fastest; Sonnet 3.7 is highest quality",
+                help="Haiku is fastest; Opus 4 is highest quality",
             )
             qwen_image_model = "qwen-image-plus"
 
@@ -813,8 +825,8 @@ with st.sidebar:
             with vc_col1:
                 if st.button("✅ Activate", key="voice_activate_saved_profile"):
                     st.session_state.voice_clone_profile = registry.get(selected_saved_profile)
-                    # Auto-enable the Use Cloned Voice checkbox
-                    st.session_state["use_cloned_voice_cb"] = True
+                    # Delete the key so the init block recreates it as True on next run
+                    st.session_state.pop("use_cloned_voice_cb", None)
                     st.success(f"✅ '{selected_saved_profile}' activated — cloned voice is now enabled!")
                     st.rerun()
             with vc_col2:
@@ -907,26 +919,8 @@ with st.sidebar:
             st.markdown("**✅ Active Clone**")
             st.json(st.session_state.voice_clone_profile)
 
-    # ── Book Template ────────────────────────────────────────────────────
-    with st.expander("📐 Book Template", expanded=False):
-        _tmpl_choices = template_choices()
-        _tmpl_option_ids = [t_id for _, t_id in _tmpl_choices]
-        template_id = st.selectbox(
-            "Visual Template",
-            options=_tmpl_option_ids,
-            index=0,
-            format_func=lambda tid: next(
-                (label for label, t_id in _tmpl_choices if t_id == tid),
-                tid,
-            ),
-            help="Controls page borders, ornaments, fonts, and colour scheme. "
-                 "'Auto' picks the best template based on topic.",
-        )
-        if template_id != "auto":
-            _selected_tmpl = get_template(template_id)
-            st.caption(f"{_selected_tmpl.emoji} {_selected_tmpl.description}")
-        else:
-            st.caption("🤖 The system will choose the best template based on your topic.")
+    # ── Book Template (visible in main form below) ───────────────────────
+    st.caption("🎨 Template & palette are configured in the Book Specification form below.")
 
     # ── API Key Status ──────────────────────────────────────────────────
     st.divider()
@@ -960,6 +954,59 @@ with c6:
     num_chapters = st.slider("📖 Chapters", 2, 12, 2)
 with c7:
     pages_per_chapter = st.slider("📄 Pages/Ch", 1, 20, 1)
+
+# ── Visual Template & Palette ────────────────────────────────────────────
+_tc8, _tc9 = st.columns(2)
+with _tc8:
+    _tmpl_choices = template_choices()
+    _tmpl_option_ids = [t_id for _, t_id in _tmpl_choices]
+    template_id = st.selectbox(
+        "🎨 Visual Template",
+        options=_tmpl_option_ids,
+        index=0,
+        format_func=lambda tid: next(
+            (label for label, t_id in _tmpl_choices if t_id == tid), tid
+        ),
+        help="Controls page layout, borders, ornaments, fonts, and colour scheme. "
+             "Each template is a completely different visual style — not just a colour change. "
+             "'Auto' picks the best template for your topic.",
+        key="main_template_id",
+    )
+    if template_id != "auto":
+        _tmpl_info = get_template(template_id)
+        st.caption(f"{_tmpl_info.emoji} **{_tmpl_info.name}** — {_tmpl_info.description}")
+    else:
+        st.caption("🤖 AI will choose the best template for your topic.")
+with _tc9:
+    _PALETTE_OPTIONS = {
+        "auto": "🤖 Auto (based on topic)",
+        "pal-naranja": "🟠 Naranja / Orange",
+        "pal-azul": "🔵 Azul / Blue",
+        "pal-rojo": "🔴 Rojo / Red",
+        "pal-rosa": "🌸 Rosa / Pink",
+        "pal-negro": "🖤 Negro / Dark",
+        "pal-olivo": "🌿 Olivo / Olive Green",
+        "pal-arcoiris": "🌈 Arcoíris / Rainbow",
+        "pal-halloween": "🎃 Halloween",
+        "pal-navidad": "🎄 Navidad / Christmas",
+        "pal-san-valentin": "💕 San Valentín",
+    }
+    palette_id = st.selectbox(
+        "🎨 Color Palette",
+        options=list(_PALETTE_OPTIONS.keys()),
+        index=0,
+        format_func=lambda p: _PALETTE_OPTIONS.get(p, p),
+        help="Override the automatic color palette. "
+             "Only applies to the Educational template — "
+             "specialty templates (Horror, Fantasy, etc.) use their own fixed palette.",
+        key="main_palette_id",
+    )
+    if template_id not in ("auto", "educational"):
+        st.caption("⚠️ Palette is fixed by this template's visual style.")
+    elif palette_id == "auto":
+        st.caption("🤖 Color palette chosen automatically from your topic.")
+    else:
+        st.caption(f"✅ Using **{_PALETTE_OPTIONS.get(palette_id, palette_id)}** palette.")
 
 st.divider()
 
@@ -1059,6 +1106,108 @@ def _embed_images_in_markdown(markdown_content: str, generated_images: list) -> 
         markdown_content,
     )
     return markdown_content
+
+
+# Approximate output-token pricing per 1M tokens (USD)
+# Sources: official pricing pages (Feb 2026 snapshot)
+_COST_PER_1M_OUTPUT: dict[str, float] = {
+    # GitHub Models (free tier — billed when exceeding quota)
+    "gpt-4o-mini": 0.60,
+    "gpt-4o": 10.00,
+    "Meta-Llama-3.1-70B-Instruct": 0.0,
+    "Mistral-large": 0.0,
+    # Qwen / Alibaba Cloud
+    "qwen-flash": 0.15,
+    "qwen-plus": 0.40,
+    "qwen-max": 2.00,
+    "qwen3-max": 2.60,
+    # Anthropic Claude
+    "claude-haiku-4-5": 4.00,
+    "claude-sonnet-4-6": 15.00,
+    "claude-opus-4-6": 75.00,
+    # Azure OpenAI
+    "gpt-35-turbo": 2.00,
+    "gpt-4-turbo": 30.00,
+}
+
+
+def _estimate_cost(tokens: int, model: str | None) -> float | None:
+    """Return estimated USD cost or None if pricing unknown."""
+    if not model:
+        return None
+    price = _COST_PER_1M_OUTPUT.get(model)
+    if price is None:
+        # Try prefix match (e.g. 'gpt-4o' prefix for custom deployments)
+        for k, v in _COST_PER_1M_OUTPUT.items():
+            if model.startswith(k):
+                price = v
+                break
+    if price is None:
+        return None
+    if price == 0.0:
+        return 0.0
+    return round(tokens * price / 1_000_000, 4)
+
+
+def _estimate_tokens(curriculum, chapters) -> int:
+    """Rough token estimate: whitespace-split words × 1.33 (avg subword factor)."""
+    text = ""
+    if curriculum:
+        import json as _json
+        try:
+            text += _json.dumps(curriculum.model_dump())
+        except Exception:
+            pass
+    for ch in (chapters or []):
+        text += (ch.markdown_content or "")
+    words = len(text.split())
+    return max(1, int(words * 1.33))
+
+
+def _apply_color_friendly_css(html_path: str) -> str | None:
+    """Injects a WCAG 2.1 AA, colorblind-safe CSS block into the HTML and saves
+    a new file with the suffix _accessible.html.  Returns the new file path."""
+    COLOR_FRIENDLY_CSS = """
+<style id="color-friendly-override">
+/* ===== WCAG 2.1 AA — Colorblind-Safe Palette Override ===== */
+:root {
+  --cb-bg: #FFFFFF;
+  --cb-text: #1A1A1A;
+  --cb-primary: #0072B2;   /* blue  — safe for all CVD types */
+  --cb-accent:  #E69F00;   /* amber — safe */
+  --cb-success: #009E73;   /* teal  — safe */
+  --cb-warn:    #CC79A7;   /* rose  — avoids red/green encoding */
+  --cb-info:    #56B4E9;   /* sky blue */
+}
+body { background: var(--cb-bg) !important; color: var(--cb-text) !important;
+       font-family: 'Atkinson Hyperlegible', Arial, sans-serif !important; }
+h1, h2, h3, h4 { color: var(--cb-primary) !important; }
+a, a:visited   { color: var(--cb-primary) !important; }
+.chapter, section, article { border-left: 5px solid var(--cb-primary) !important; }
+table { border-collapse: collapse; }
+th { background: var(--cb-primary) !important; color: #fff !important; }
+tr:nth-child(even) { background: #E8F4FD !important; }
+.highlight, mark { background: var(--cb-accent) !important; color: #000 !important; }
+.success, .correct { color: var(--cb-success) !important; font-weight: bold; }
+.warning, .incorrect { color: var(--cb-warn) !important; font-weight: bold; }
+img { filter: none !important; }
+</style>
+"""
+    try:
+        with open(html_path, "r", encoding="utf-8", errors="replace") as f:
+            html = f.read()
+        if "color-friendly-override" in html:
+            # already applied — just return new path
+            pass
+        else:
+            html = html.replace("</head>", f"{COLOR_FRIENDLY_CSS}</head>", 1)
+        out_path = str(html_path).replace(".html", "_accessible.html")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        return out_path
+    except Exception as e:
+        print(f"⚠️ _apply_color_friendly_css failed: {e}")
+        return None
 
 
 async def generate_book_async(
@@ -1534,6 +1683,7 @@ if run_full_generation:
             "tts_audio_format": tts_audio_format,
             "tts_speech_rate": tts_speech_rate,
             "template_id": template_id,
+            "palette_id": palette_id,
         },
     )
 
@@ -1565,6 +1715,7 @@ if run_full_generation:
         if runtime["enable_tts"]:
             audio_dir_path.mkdir(parents=True, exist_ok=True)
 
+        _gen_t0 = time.perf_counter()
         curriculum, full_chapters = asyncio.run(
             generate_book_async(
                 request,
@@ -1632,10 +1783,17 @@ if run_full_generation:
                 effective_template_id = auto_pick_template(request.topic)
                 print(f"🤖 Auto-picked template: {effective_template_id} (topic: {request.topic})")
 
+            # Resolve palette_id — explicit user choice or auto
+            effective_palette_id = runtime.get("palette_id", palette_id)
+
             # Generate HTML
             html_path = html_dir / f"libro_interactivo.html"
-            generate_html_css_book_from_json(request, curriculum, full_chapters, str(html_path), template_id=effective_template_id)
-            print(f"✅ HTML saved: {html_path} (template: {effective_template_id})")
+            generate_html_css_book_from_json(
+                request, curriculum, full_chapters, str(html_path),
+                template_id=effective_template_id,
+                palette_id=effective_palette_id,
+            )
+            print(f"✅ HTML saved: {html_path} (template: {effective_template_id}, palette: {effective_palette_id})")
 
             # Generate Markdown
             md_path = md_dir / f"libro_interactivo.md"
@@ -1664,6 +1822,11 @@ if run_full_generation:
             except Exception as e:
                 print(f"⚠️  Error generating PDF: {e}")
                 pdf_success = False
+
+            # Save generation metrics
+            st.session_state.gen_time = time.perf_counter() - _gen_t0
+            st.session_state.gen_tokens_est = _estimate_tokens(curriculum, full_chapters)
+            st.session_state.gen_model = runtime.get("qwen_text_model")
 
             # Save to session state
             st.session_state.book_generated = True
@@ -1743,6 +1906,7 @@ if run_audio_only_generation:
         json_dir.mkdir(parents=True, exist_ok=True)
         md_dir.mkdir(parents=True, exist_ok=True)
 
+        _gen_t0 = time.perf_counter()
         curriculum, full_chapters = asyncio.run(
             generate_audio_book_only_async(
                 request=request,
@@ -1757,6 +1921,9 @@ if run_audio_only_generation:
                 voice_clone_profile=active_clone_profile,
             )
         )
+        st.session_state.gen_time = time.perf_counter() - _gen_t0
+        st.session_state.gen_tokens_est = _estimate_tokens(curriculum, full_chapters)
+        st.session_state.gen_model = runtime.get("qwen_text_model")
 
         if not curriculum or not full_chapters:
             st.error("Audiobook-only generation failed. Please try again.")
@@ -1813,6 +1980,113 @@ if run_audio_only_generation:
 if st.session_state.book_generated and st.session_state.curriculum:
     st.divider()
 
+    # === Generation Stats ===
+    _chapters_list = st.session_state.full_chapters or []
+    _num_chapters = len(_chapters_list)
+
+    # Word count across all chapters
+    _total_words = sum(
+        len((ch.markdown_content or "").split())
+        for ch in _chapters_list
+    )
+
+    # Image count
+    _total_images = sum(
+        len(getattr(ch, "generated_images", None) or [])
+        for ch in _chapters_list
+    )
+
+    # Audio files count
+    _audio_count = len([
+        n for n in (st.session_state.audio_narrations or [])
+        if n and getattr(n, "file_path", None)
+    ])
+
+    # Total audio size in MB
+    _audio_mb = sum(
+        (getattr(n, "size_bytes", 0) or 0)
+        for n in (st.session_state.audio_narrations or [])
+        if n
+    ) / (1024 * 1024)
+
+    st.subheader("📊 Generation Summary")
+
+    # --- compute / recover metrics at display time ---
+    _disp_tokens = st.session_state.gen_tokens_est
+    if not _disp_tokens and st.session_state.full_chapters:
+        _disp_tokens = _estimate_tokens(
+            st.session_state.curriculum, st.session_state.full_chapters
+        )
+    _disp_model = st.session_state.gen_model
+    _est_cost = _estimate_cost(_disp_tokens or 0, _disp_model) if _disp_tokens else None
+
+    _m1, _m2, _m3 = st.columns(3)
+    _m4, _m5, _m6, _m7 = st.columns(4)
+
+    # Row 1: timing / tokens / cost
+    if st.session_state.gen_time:
+        _min, _sec = divmod(int(st.session_state.gen_time), 60)
+        _time_str = f"{_min}m {_sec}s" if _min else f"{_sec}s"
+        _m1.metric("⏱️ Generation Time", _time_str)
+    else:
+        _m1.metric("⏱️ Generation Time", "—")
+
+    _m2.metric(
+        "📝 Tokens (est.)",
+        f"{_disp_tokens:,}" if _disp_tokens else "—",
+        help="Rough estimate: output word count × 1.33 subword factor.",
+    )
+
+    if _est_cost is None:
+        _m3.metric(
+            "💰 Est. Cost",
+            "—",
+            help="Model not found in pricing table; update _COST_PER_1M_OUTPUT in app.py.",
+        )
+    elif _est_cost == 0.0:
+        _m3.metric(
+            "💰 Est. Cost",
+            "Free",
+            help=f"Model '{_disp_model}' billed at $0 (free tier).",
+        )
+    else:
+        _cost_str = f"${_est_cost:.4f}" if _est_cost < 0.01 else f"${_est_cost:.3f}"
+        _m3.metric(
+            "💰 Est. Cost",
+            _cost_str,
+            help=(
+                f"Model: {_disp_model}\n"
+                f"Rate: ${_COST_PER_1M_OUTPUT.get(_disp_model, 0):.2f} / 1M output tokens\n"
+                "Input tokens not factored in (output-only estimate)."
+            ),
+        )
+
+    # Row 2: chapters / words / images / audio
+    _m4.metric(
+        "📚 Chapters",
+        _num_chapters,
+    )
+    _m5.metric(
+        "📖 Word Count",
+        f"{_total_words:,}" if _total_words else "—",
+        help="Total words across all generated chapter content.",
+    )
+    _m6.metric(
+        "🖼️ Images",
+        _total_images if _total_images else "—",
+        help="AI-generated or web-searched images embedded in the book.",
+    )
+    if _audio_count:
+        _m7.metric(
+            "🔊 Audio Files",
+            _audio_count,
+            delta=f"{_audio_mb:.1f} MB" if _audio_mb > 0 else None,
+            delta_color="off",
+            help="Number of narrated chapter audio files generated.",
+        )
+    else:
+        _m7.metric("🔊 Audio Files", "—")
+
     # === Inline PDF preview ===
     if st.session_state.pdf_path and os.path.exists(st.session_state.pdf_path):
         st.subheader("📄 PDF Preview")
@@ -1868,6 +2142,77 @@ if st.session_state.book_generated and st.session_state.curriculum:
                     file_name="libro_interactivo.pdf",
                     mime="application/pdf"
                 )
+
+    # === Accessibility Options ===
+    st.subheader("♿ Accessibility Options")
+    _acc_col1, _acc_col2 = st.columns(2)
+    with _acc_col1:
+        if st.button("🎨 Generate Color-Friendly Version",
+                     help="Re-exports the HTML with a WCAG 2.1 AA colorblind-safe palette (blues/ambers/teals instead of red/green)"):
+            if st.session_state.html_path and os.path.exists(st.session_state.html_path):
+                _cf_path = _apply_color_friendly_css(st.session_state.html_path)
+                if _cf_path:
+                    st.session_state.color_friendly_path = _cf_path
+                    st.success("✅ Color-friendly HTML ready!")
+                    st.rerun()
+            else:
+                st.warning("No HTML found. Run a full book generation first.")
+    with _acc_col2:
+        if st.button("👁️ Generate Blind-Friendly Scripts",
+                     help="Runs the AudiobookQA agent to adapt all chapter content for blind and visually-impaired listeners"):
+            if st.session_state.full_chapters:
+                with st.spinner("♿ Adapting chapters for blind-friendly accessibility..."):
+                    _scripts = [ch.markdown_content or "" for ch in st.session_state.full_chapters]
+                    _titles = [ch.chapter_title for ch in st.session_state.full_chapters]
+                    _req_data = (st.session_state.output_data or {}).get("book_request", {})
+                    _lang = _req_data.get("language", "Spanish")
+                    _age = int(_req_data.get("target_audience_age", 10))
+                    _adapted = asyncio.run(
+                        review_full_audiobook_for_blind_friendly(
+                            scripts=_scripts,
+                            chapter_titles=_titles,
+                            language=_lang,
+                            target_age=_age,
+                            use_qwen=use_qwen_models,
+                        )
+                    )
+                    _bf_path = (str(st.session_state.md_path).replace(".md", "_blind_friendly.md")
+                                if st.session_state.md_path
+                                else "books/libro_blind_friendly.md")
+                    Path(_bf_path).parent.mkdir(parents=True, exist_ok=True)
+                    with open(_bf_path, "w", encoding="utf-8") as _bf_f:
+                        _bf_f.write("# Blind-Friendly Edition\n\n")
+                        for _t, _s in zip(_titles, _adapted):
+                            _bf_f.write(f"## {_t}\n\n{_s}\n\n---\n\n")
+                    st.session_state.blind_friendly_path = _bf_path
+                    st.success("✅ Blind-friendly scripts ready!")
+                    st.rerun()
+            else:
+                st.warning("No chapters found. Generate a book first.")
+
+    # Download buttons for accessibility outputs
+    if st.session_state.color_friendly_path or st.session_state.blind_friendly_path:
+        _dl_col1, _dl_col2 = st.columns(2)
+        with _dl_col1:
+            if st.session_state.color_friendly_path and os.path.exists(st.session_state.color_friendly_path):
+                with open(st.session_state.color_friendly_path, "rb") as f:
+                    st.download_button(
+                        label="⬇️ Download Color-Friendly HTML",
+                        data=f,
+                        file_name="libro_color_friendly.html",
+                        mime="text/html",
+                        key="dl_color_friendly",
+                    )
+        with _dl_col2:
+            if st.session_state.blind_friendly_path and os.path.exists(st.session_state.blind_friendly_path):
+                with open(st.session_state.blind_friendly_path, "rb") as f:
+                    st.download_button(
+                        label="⬇️ Download Blind-Friendly Markdown",
+                        data=f,
+                        file_name="libro_blind_friendly.md",
+                        mime="text/markdown",
+                        key="dl_blind_friendly",
+                    )
 
     # === Audiobook Download ===
     audio_files = list(st.session_state.audio_narrations or [])

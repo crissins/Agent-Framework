@@ -89,8 +89,8 @@ class ModelConfig:
         "provider": "claude",
         "api_key_env": "ANTHROPIC_API_KEY",
         "base_url": "https://api.anthropic.com/v1",
-        "model_id": "claude-3-5-haiku-20241022",
-        "description": "Anthropic Claude (claude-3-5-haiku-20241022)"
+        "model_id": "claude-haiku-4-5",
+        "description": "Anthropic Claude (claude-haiku-4-5)"
     }
 
     # Azure AI Foundry / Azure OpenAI — endpoint from env var

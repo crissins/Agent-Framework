@@ -54,7 +54,9 @@ _NO_TEXT_NEGATIVE_PROMPT = (
 
 # ── LOW-BUDGET coloring-page negative prompt ──────────────────────────────────
 _LOW_BUDGET_NEGATIVE_PROMPT = (
-    "colors, shading, gradients, grayscale, photorealistic elements, complex details, "
+    "color, colors, colorful, vibrant, saturated, hues, tones, chromatic, "
+    "red, blue, green, yellow, orange, purple, pink, brown, "
+    "shading, gradients, photorealistic elements, complex details, "
     "dark fills, textures, watermark, text, words, letters, numbers, blurry, "
     "low quality, deformed, distorted, ugly, pixelated"
 )
@@ -68,8 +70,9 @@ def _build_low_budget_prompt(subject: str) -> str:
     """
     return (
         "Create a black and white line drawing coloring page for young children ages 4-8. "
-        "STYLE REQUIREMENTS: Pure black and white line art only, NO colors, NO shading, "
-        "NO grayscale. Clean, bold outlines with thick lines. Simple, clear shapes "
+        "STYLE REQUIREMENTS: Pure black and white line art only. "
+        "Absolutely NO color — not even a hint of color or tint. "
+        "Clean, bold outlines with thick lines. Simple, clear shapes "
         "suitable for coloring. Coloring book style with well-defined boundaries. "
         "White background. Educational worksheet format. "
         f"SUBJECT: {subject}. "
@@ -77,7 +80,7 @@ def _build_low_budget_prompt(subject: str) -> str:
         "composition. Large, easy-to-color areas. No tiny details or complex patterns. "
         "Friendly, smiling characters. Appropriate for preschool/early elementary "
         "education. Line thickness: medium to bold. High contrast black lines on "
-        "white background."
+        "white background. Monochrome line art only."
     )
 
 
@@ -566,6 +569,8 @@ def generate_chapter_image(
 
             if local_path:
                 print(f"💾 Image saved: {local_path}\n")
+                if art_style == "low_budget":
+                    _force_grayscale(local_path)
                 return ImagePlaceholder(
                     description=title,
                     url=local_path,
@@ -649,3 +654,24 @@ def _download_and_save_image(url: str, title: str, output_dir: str) -> Optional[
     except Exception as e:
         print(f"⚠️ Error downloading image: {e}")
         return None
+
+
+def _force_grayscale(filepath: str) -> str:
+    """Convert a saved image to pure grayscale (luminance-only) in-place.
+
+    This is the final guarantee that low-budget images contain NO colour,
+    regardless of what the image model generated.  The file is overwritten
+    with an identical PNG that has all chroma stripped.
+
+    Falls back silently if Pillow is unavailable.
+    """
+    try:
+        from PIL import Image as _PILImage
+        with _PILImage.open(filepath) as img:
+            bw = img.convert("L")      # L = 8-bit grayscale — strips all chroma
+            bw = bw.convert("RGB")     # back to RGB so browsers render it normally
+            bw.save(filepath, format="PNG", optimize=True)
+        logger.info(f"🖤 Forced grayscale: {Path(filepath).name}")
+    except Exception as e:
+        logger.warning(f"⚠️ _force_grayscale skipped ({e})")
+    return filepath

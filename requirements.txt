@@ -36,6 +36,7 @@ aiohttp
 
 # Optional: Video & Search Support
 qrcode
+Pillow
 pillow
 ddgs
 curl_cffi

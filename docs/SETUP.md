@@ -152,7 +152,7 @@ Then open VS Code and press **F5** (→ "Debug Agent HTTP Server") to connect th
 | Qwen region | Singapore / Beijing / US-Virginia | Singapore |
 | Qwen text model | qwen-flash / qwen-plus / qwen-max / qwen3-max | qwen-flash |
 | Qwen image model | qwen-image-plus / qwen-image-max variants | qwen-image-plus |
-| Claude text model | claude-3-5-haiku / claude-3-5-sonnet / claude-3-7-sonnet | claude-3-5-haiku |
+| Claude text model | claude-haiku-4-5 / claude-sonnet-4-6 / claude-opus-4-6 | claude-haiku-4-5 |
 | Azure deployment | Your custom deployment name | gpt-4o |
 | Azure image model | dall-e-3 / dall-e-2 / gpt-4o / qwen-image-plus | dall-e-3 |
 

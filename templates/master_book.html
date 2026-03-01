@@ -25,8 +25,9 @@
   --p-text-mid  : #4A3525;
   --p-text-light: #8C6A4E;
 
-  /* Geometry */
-  --page-w    : 800px;
+  /* Geometry — A4 proportions (210 × 297 mm at 96 dpi = 794 × 1123 px) */
+  --page-w    : 794px;
+  --page-h    : 1123px;
   --page-pad  : 52px 64px 88px;
   --b-thick   : 6px;
   --b-thin    : 1.5px;
@@ -162,12 +163,16 @@ html[dir="rtl"] .cover-desc {
 .book-page {
   width: var(--page-w);
   max-width: 100%;
+  height: var(--page-h);
+  overflow: hidden;
   margin: 0 auto 30px;
   background: var(--p-page-bg);
   box-shadow:
     0 4px 28px rgba(0,0,0,.13),
     0 1px 3px rgba(0,0,0,.07);
   border-radius: 2px;
+  page-break-after: always;
+  break-after: page;
 }
 .page-frame {
   margin: 14px;
@@ -175,9 +180,34 @@ html[dir="rtl"] .cover-desc {
   border-radius: var(--radius);
   padding: var(--page-pad);
   position: relative;
-  min-height: 900px;
+  height: calc(var(--page-h) - 28px);
   background: var(--p-page-bg);
   overflow: hidden;
+}
+
+/* Offscreen block measurement container */
+.ch-measure {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 638px; /* 794 - 2*14(frame margin) - 2*64(padding) */
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Continuation-page chapter label */
+.ch-cont-label {
+  font-family: var(--f-body);
+  font-weight: 700;
+  font-size: .6rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--p-text-light);
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1.5px dashed var(--p-secondary);
+  position: relative;
+  z-index: 1;
 }
 .page-frame::before {
   content: '';
@@ -488,14 +518,26 @@ html[dir="rtl"] .cover-desc {
 /* ══════════════════════════════════════════════════════════════════════
    PRINT & RESPONSIVE
 ══════════════════════════════════════════════════════════════════════ */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
 @media print {
   body { background: white; padding: 0; }
-  .book-cover, .book-page { box-shadow: none; margin: 0; page-break-after: always; }
-  .page-frame { min-height: auto; }
+  .book-cover, .book-page {
+    box-shadow: none; margin: 0;
+    page-break-after: always; break-after: page;
+    width: 210mm; height: 297mm; overflow: hidden;
+  }
+  .page-frame { height: calc(297mm - 28px); overflow: hidden; border: none; }
+  .inner-border { display: none; }
+  .ch-measure { display: none; }
 }
 
 @media (max-width: 860px) {
-  :root { --page-w: 100%; --page-pad: 30px 26px 74px; }
+  :root { --page-w: 100%; --page-h: auto; --page-pad: 30px 26px 74px; }
+  .book-page { height: auto; overflow: visible; }
+  .page-frame { height: auto; overflow: visible; }
   .ch-bg-num { display: none; }
   .qr-row { flex-direction: column; }
   .qr-box { width: 100%; flex-direction: row; align-items: center; gap: 14px; }
@@ -798,43 +840,142 @@ function buildTOC(d) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   CHAPTER PAGE
+   CHAPTER — Pass 1: render blocks into offscreen measure container
+   Pass 2 (paginateChapters) splits them into strict A4 pages
 ════════════════════════════════════════════════════════════════════════ */
 function buildChapter(d, ch, idx) {
-  var tocPages = Math.ceil(d.toc.length / 6);
-  var pNum   = idx + 1 + tocPages;
-  var chShort = shortTitle(ch.title, 30);
-  var orn = d.theme.ornament || "\u2726";
-  var html = "";
-
-  html += '<div class="book-page">';
-  html += '<div class="page-frame">';
-  html += '<div class="inner-border"></div>';
-  html += '<span class="c-tl">' + orn + '</span><span class="c-tr">' + orn + '</span>';
-  html += '<span class="c-bl">' + orn + '</span><span class="c-br">' + orn + '</span>';
-
-  /* Header */
-  html += '<div class="page-hdr">';
-  html += '<div class="hdr-left"><span class="hdr-dot"></span>' + esc(d.request.topic) + '</div>';
-  html += '<div class="hdr-right">' + esc(shortTitle(d.title, 40)) + '</div>';
-  html += '</div>';
-
-  /* Chapter title */
+  var html = '<div class="ch-measure" data-idx="' + idx + '">';
+  /* chapter title node — measured to deduct from first-page budget */
+  html += '<div class="ch-measure-title">';
   html += '<div class="ch-block">';
   html += '<div class="ch-eyebrow">' + esc(I.chapter) + ' ' + (idx + 1) + '</div>';
   html += '<h2 class="ch-h2">' + esc(ch.title) + '</h2>';
   html += '</div>';
-
-  /* Content blocks */
-  html += '<div class="content">';
+  html += '</div>';
+  /* each block in individual wrapper for per-block height measurement */
   for (var b = 0; b < ch.blocks.length; b++) {
-    html += renderBlock(ch.blocks[b]);
+    html += '<div class="ch-measure-blk">' + renderBlock(ch.blocks[b]) + '</div>';
   }
   html += '</div>';
-
-  html += pageFooter(shortTitle(d.title, 34), String(pNum), esc(I.ch_abbr) + " " + (idx + 1) + " \u2014 " + esc(chShort));
-  html += '</div></div>';
   return html;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   CHAPTER — Pass 2: bin-pack measured blocks into exact A4 pages
+════════════════════════════════════════════════════════════════════════ */
+function paginateChapters(d) {
+  var app      = document.getElementById('app');
+  var sources  = app.querySelectorAll('.ch-measure');
+  var tocPages = Math.ceil(d.toc.length / 6);
+
+  /* ── Layout constants matching CSS (px) ───────────────────────────── */
+  var PAGE_H     = 1123;  /* --page-h                                  */
+  var FRM_MARGIN = 14;    /* .page-frame margin (all sides)            */
+  var PAD_TOP    = 52;    /* .page-frame padding-top                   */
+  var PAD_BOT    = 88;    /* .page-frame padding-bottom                */
+  var HDR_H      = 74;    /* .page-hdr height inc margin-bottom:24px   */
+  var BLK_GAP    = 4;     /* breathing room added to each block height */
+
+  var frameH  = PAGE_H - 2 * FRM_MARGIN;            /* 1095 */
+  var usableH = frameH - PAD_TOP - PAD_BOT - HDR_H; /* 881  */
+
+  var globalPage = 1 + tocPages; /* 1 cover + N toc pages → first chapter page */
+
+  for (var ci = 0; ci < sources.length; ci++) {
+    var src     = sources[ci];
+    var idx     = parseInt(src.getAttribute('data-idx'), 10);
+    var ch      = d.chapters[idx];
+    var orn     = (d.theme && d.theme.ornament) || '\u2726';
+    var chShort = shortTitle(ch.title, 30);
+
+    /* Measure title block height */
+    var titleNode = src.querySelector('.ch-measure-title');
+    var titleH    = titleNode ? Math.ceil(titleNode.getBoundingClientRect().height) + 10 : 92;
+
+    /* Measure each content block */
+    var blkNodes   = src.querySelectorAll('.ch-measure-blk');
+    var blkHeights = [];
+    for (var bi = 0; bi < blkNodes.length; bi++) {
+      blkHeights.push(Math.ceil(blkNodes[bi].getBoundingClientRect().height) + BLK_GAP);
+    }
+
+    /* ── Bin-pack blocks into pages ──────────────────────────────────── */
+    var pages = [];          /* each entry = array of block indices   */
+    var curPg = [];
+    var curH  = titleH;      /* first page: title already consumes budget */
+
+    for (var bi = 0; bi < blkHeights.length; bi++) {
+      var bh = blkHeights[bi];
+      /* Start new page if this block overflows AND current page is non-empty */
+      if ((curH + bh) > usableH && curPg.length > 0) {
+        pages.push(curPg);
+        curPg = [];
+        curH  = 0;
+      }
+      curPg.push(bi);
+      curH += bh;
+    }
+    pages.push(curPg); /* always push last/only page */
+
+    /* ── Build one .book-page per page slice ─────────────────────────── */
+    var frag = document.createDocumentFragment();
+    for (var pi = 0; pi < pages.length; pi++) {
+      var isFirst = (pi === 0);
+      var pNum    = globalPage + pi;
+      var pageEl  = document.createElement('div');
+      pageEl.className = 'book-page';
+
+      var inner = '<div class="page-frame">';
+      inner += '<div class="inner-border"></div>';
+      inner += '<span class="c-tl">' + orn + '</span><span class="c-tr">' + orn + '</span>';
+      inner += '<span class="c-bl">' + orn + '</span><span class="c-br">' + orn + '</span>';
+
+      /* Page header */
+      inner += '<div class="page-hdr"><div class="hdr-left"><span class="hdr-dot"></span>'
+             + esc(d.request.topic) + '</div>'
+             + '<div class="hdr-right">' + esc(shortTitle(d.title, 40)) + '</div></div>';
+
+      /* Chapter title (first page) OR continuation label */
+      if (isFirst) {
+        inner += '<div class="ch-block">'
+               + '<div class="ch-eyebrow">' + esc(I.chapter) + '\u00a0' + (idx + 1) + '</div>'
+               + '<h2 class="ch-h2">' + esc(ch.title) + '</h2>'
+               + '</div>';
+      } else {
+        inner += '<div class="ch-cont-label">'
+               + esc(I.ch_abbr) + '\u00a0' + (idx + 1)
+               + (pages.length > 1 ? '\u2002\u00b7\u2002' + (pi + 1) + '\u200a/\u200a' + pages.length : '')
+               + '\u2003\u2014\u2003' + esc(chShort)
+               + '</div>';
+      }
+
+      /* Content blocks for this page */
+      inner += '<div class="content">';
+      for (var bii = 0; bii < pages[pi].length; bii++) {
+        inner += blkNodes[pages[pi][bii]].innerHTML;
+      }
+      inner += '</div>';
+
+      /* Footer */
+      inner += pageFooter(
+        shortTitle(d.title, 34),
+        String(pNum),
+        esc(I.ch_abbr) + '\u00a0' + (idx + 1)
+          + (pages.length > 1 ? '\u2002(' + (pi + 1) + '/' + pages.length + ')' : '')
+          + '\u2003\u2014\u2003' + esc(chShort)
+      );
+      inner += '</div>'; /* close .page-frame */
+
+      pageEl.innerHTML = inner;
+      frag.appendChild(pageEl);
+    }
+
+    globalPage += pages.length;
+
+    /* Insert pages before the measure container, then remove it */
+    app.insertBefore(frag, src);
+    app.removeChild(src);
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -878,6 +1019,9 @@ function render(d) {
     html += buildChapter(d, d.chapters[c], c);
   }
   document.getElementById("app").innerHTML = html;
+
+  /* Pass 2: split each chapter's blocks into strict A4-sized pages */
+  paginateChapters(d);
 }
 
 render(BOOK);

@@ -32,6 +32,7 @@ def generate_html_css_book_from_json(
     chapters: list[ChapterContent],
     output_html: str,
     template_id: str = "educational",
+    palette_id: str = "",
 ):
     """Build a self-contained HTML book file from structured data."""
 
@@ -42,7 +43,7 @@ def generate_html_css_book_from_json(
     template = template_path.read_text(encoding="utf-8")
 
     # Build the JS data object that the template's <script> section expects
-    book_obj = _build_book_object(book_request, curriculum, chapters, template_id)
+    book_obj = _build_book_object(book_request, curriculum, chapters, template_id, palette_id)
     book_json = json.dumps(book_obj, ensure_ascii=False, indent=2)
     # Keep JSON safe inside <script> contexts
     book_json = (
@@ -112,6 +113,7 @@ def _build_book_object(
     cur: Curriculum,
     chapters: List[ChapterContent],
     template_id: str = "educational",
+    palette_id: str = "",
 ) -> dict:
     """Create the dict that becomes ``var BOOK = ...`` in the template."""
 
@@ -135,11 +137,13 @@ def _build_book_object(
 
     # Non-educational templates MUST use their own palette (e.g. dark themes
     # need dark-palette text colours; pal-naranja text is invisible on #0A0608).
-    palette = (
-        tmpl.default_palette
-        if template_id != "educational"
-        else _pick_palette(req.topic)
-    )
+    # palette_id allows an explicit override for the educational template.
+    if template_id != "educational":
+        palette = tmpl.default_palette
+    elif palette_id and palette_id != "auto" and palette_id.startswith("pal-"):
+        palette = palette_id
+    else:
+        palette = _pick_palette(req.topic)
 
     return {
         "palette": palette,
