@@ -478,10 +478,17 @@ body {
 /* ══════════════════════════════════════════════════════════════════════
    PRINT
 ══════════════════════════════════════════════════════════════════════ */
+@page { size: A4 portrait; margin: 0; }
 @media print {
   body { background: white; padding: 0; }
-  .book-cover, .book-page { box-shadow: none; margin: 0; page-break-after: always; }
-  .page-frame { min-height: auto; }
+  .book-cover, .book-page {
+    box-shadow: none; margin: 0;
+    page-break-after: always; break-after: page;
+    width: 210mm; height: 297mm; overflow: hidden;
+  }
+  .page-frame { height: calc(297mm - 28px); overflow: hidden; border: none; }
+  .inner-border { display: none; }
+  .ch-measure { display: none; }
 }
 
 @media (max-width: 860px) {

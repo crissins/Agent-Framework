@@ -70,7 +70,7 @@ async def create_book_agent(use_qwen: bool = False, model_id: str | None = None)
         model_id=resolved_model_id,
     )
 
-    agent = client.as_agent(
+    agent = client.create_agent(
         name="BookPlannerAgent",
         instructions=(
             "You are an expert LATAM educational book planner and curriculum designer.\n\n"

@@ -50,6 +50,12 @@ from agents.voice_clone_agent import narrate_chapter_vc
 from agents.audio_book_script_agent import generate_audio_script, prepare_script_for_tts
 from agents.audiobook_qa_agent import review_full_audiobook_for_blind_friendly
 from agents.voice_curriculum_agent import create_voice_curriculum_agent, generate_voice_curriculum
+from agents.genre_agents import generate_genre_book_async as _generate_genre_book_async
+from models.book_spec import BOOK_GENRES
+from agents.batch_generator import (
+    BatchJobSpec, run_batch_parallel,
+    PROVIDER_MODELS, PROVIDER_LABELS,
+)
 from agents.voice_chapter_agent import create_voice_chapter_agent, generate_voice_chapter
 
 # Load environment variables
@@ -114,6 +120,11 @@ st.session_state.setdefault("audio_output_dir", None)
 st.session_state.setdefault("gen_time", None)
 st.session_state.setdefault("gen_tokens_est", None)
 st.session_state.setdefault("gen_model", None)
+
+# Batch generation session state
+st.session_state.setdefault("batch_results", None)    # list[BatchJobResult] | None
+st.session_state.setdefault("batch_running", False)
+st.session_state.setdefault("batch_status", {})       # live status dict from run_batch_parallel
 st.session_state.setdefault("blind_friendly_path", None)
 st.session_state.setdefault("color_friendly_path", None)
 
@@ -934,6 +945,173 @@ with st.sidebar:
 active_clone_profile = st.session_state.voice_clone_profile if use_cloned_voice else None
 
 # ══════════════════════════════════════════════════════════════════════════
+# PAGE SELECTOR — Single Book vs Batch Generation
+# ══════════════════════════════════════════════════════════════════════════
+_page_sel = st.radio(
+    "",
+    ["📚 Single Book", "⚡ Batch Generation"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_page_selector",
+)
+
+if _page_sel == "⚡ Batch Generation":
+
+    st.subheader("⚡ Batch Book Generation")
+    st.caption(
+        "Run up to 6 book jobs in parallel — each using a different LLM. "
+        "Jobs execute concurrently in separate threads."
+    )
+
+    # ── Job builder ────────────────────────────────────────────────────────
+    st.markdown("#### 📋 Configure Jobs")
+
+    _batch_topic_default = "Emotional Intelligence for Teenagers"
+
+    def _batch_job_row(idx: int):
+        """Render one job configuration row. Returns a BatchJobSpec or None."""
+        with st.expander(f"Job {idx + 1}", expanded=(idx < 3)):
+            _col_en, _col_lbl = st.columns([1, 5])
+            _enabled = _col_en.checkbox("Enable", value=True, key=f"bj_en_{idx}")
+            if not _enabled:
+                return None
+
+            _lbl = _col_lbl.text_input(
+                "Label", value=f"Job {idx + 1}",
+                key=f"bj_lbl_{idx}",
+            )
+
+            _ca, _cb, _cc = st.columns(3)
+            _provider = _ca.selectbox(
+                "Provider",
+                list(PROVIDER_LABELS.keys()),
+                index=idx % len(PROVIDER_LABELS),
+                format_func=lambda p: PROVIDER_LABELS[p],
+                key=f"bj_prov_{idx}",
+            )
+            _models = PROVIDER_MODELS[_provider]
+            _model = _cb.selectbox(
+                "Model", _models, index=0,
+                key=f"bj_model_{idx}",
+            )
+            _genre_opts = list(BOOK_GENRES.keys())
+            _genre = _cc.selectbox(
+                "Genre", _genre_opts,
+                format_func=lambda g: BOOK_GENRES[g],
+                index=0,
+                key=f"bj_genre_{idx}",
+            )
+
+            _da, _db, _dc = st.columns([4, 1, 1])
+            _topic = _da.text_input(
+                "Topic", value=_batch_topic_default,
+                key=f"bj_topic_{idx}",
+            )
+            _nch = _db.number_input(
+                "Chapters", min_value=1, max_value=12, value=3,
+                key=f"bj_nch_{idx}",
+            )
+            _lang = _dc.selectbox(
+                "Language", ["English", "Spanish", "Portuguese"],
+                key=f"bj_lang_{idx}",
+            )
+
+            return BatchJobSpec(
+                job_id=f"job_{idx + 1}",
+                label=_lbl,
+                provider=_provider,
+                model=_model,
+                topic=_topic,
+                num_chapters=int(_nch),
+                language=_lang,
+                genre=_genre,
+                target_audience_age=14,
+                country="World wide",
+                learning_method="Project-Based Learning",
+            )
+
+    _num_jobs = st.slider("Number of parallel jobs", 1, 6, 3, key="batch_num_jobs")
+    _specs = [_batch_job_row(i) for i in range(_num_jobs)]
+    _specs = [s for s in _specs if s is not None]
+
+    st.divider()
+
+    # ── Run button ──────────────────────────────────────────────────────────
+    _run_batch_clicked = st.button(
+        f"🚀 Run {len(_specs)} Job(s) in Parallel",
+        type="primary",
+        disabled=len(_specs) == 0 or st.session_state.batch_running,
+        key="run_batch_btn",
+    )
+
+    if _run_batch_clicked and _specs:
+        st.session_state.batch_running = True
+        st.session_state.batch_results = None
+        st.session_state.batch_status = {s.job_id: {"state": "pending", "log": []} for s in _specs}
+        # Run synchronously (blocking) — Streamlit re-runs the script after
+        with st.spinner(f"Running {len(_specs)} parallel book generation job(s)…"):
+            _results, _status = run_batch_parallel(_specs)
+        st.session_state.batch_results = _results
+        st.session_state.batch_status = _status
+        st.session_state.batch_running = False
+        st.rerun()
+
+    # ── Live/completed results ──────────────────────────────────────────────
+    if st.session_state.batch_results:
+        st.markdown("#### 📊 Results")
+        _results: list = st.session_state.batch_results
+
+        # Summary table
+        _col_hdrs = st.columns([2, 2, 1, 1, 1, 1, 1])
+        for _h, _t in zip(
+            _col_hdrs,
+            ["Label", "Model", "Status", "Time", "Chapters", "Words", "Tokens"],
+        ):
+            _h.markdown(f"**{_t}**")
+        st.divider()
+
+        for _r in sorted(_results, key=lambda r: r.job_id):
+            _rc = st.columns([2, 2, 1, 1, 1, 1, 1])
+            _rc[0].write(_r.label)
+            _rc[1].write(f"`{_r.model}`")
+            if _r.success:
+                _rc[2].success("✅ Done")
+            else:
+                _rc[2].error("❌ Failed")
+            _rc[3].write(f"{_r.elapsed_sec:.0f}s" if _r.elapsed_sec else "—")
+            _rc[4].write(str(_r.num_chapters) if _r.success else "—")
+            _rc[5].write(f"{_r.word_count:,}" if _r.success else "—")
+            _rc[6].write(f"{_r.tokens_est:,}" if _r.success else "—")
+
+            # Download buttons for successful jobs
+            if _r.success and _r.html_path:
+                import pathlib as _pl
+                _html_file = _pl.Path(_r.html_path)
+                if _html_file.exists():
+                    with open(_html_file, "rb") as _hf:
+                        st.download_button(
+                            f"📥 {_r.label} — HTML",
+                            data=_hf,
+                            file_name=_html_file.name,
+                            mime="text/html",
+                            key=f"dl_html_{_r.job_id}",
+                        )
+
+            # Log expander
+            with st.expander(f"📋 Log — {_r.label}", expanded=not _r.success):
+                if _r.error:
+                    st.error(_r.error)
+                for _line in _r.log:
+                    st.text(_line)
+
+    elif st.session_state.batch_running:
+        st.info("⏳ Jobs are running… refresh the page to see progress.")
+    else:
+        st.info("Configure jobs above and click **Run** to start parallel generation.")
+
+    st.stop()  # ← Do NOT run single-book code when batch tab is active
+
+# ══════════════════════════════════════════════════════════════════════════
 # MAIN PAGE — Book Specification
 # ══════════════════════════════════════════════════════════════════════════
 st.subheader("📋 Book Specification")
@@ -947,13 +1125,36 @@ with c3:
 with c4:
     target_audience_age = st.slider("👧 Age", 8, 16, 8)
 
-c5, c6, c7 = st.columns(3)
+c5, c6, c7, c8 = st.columns([2, 2, 1, 2])
 with c5:
     learning_method = st.selectbox("🧠 Method", ["Scandinavian", "Montessori", "Project-Based"])
 with c6:
-    num_chapters = st.slider("📖 Chapters", 2, 12, 2)
+    _genre_options = list(BOOK_GENRES.keys())
+    book_genre = st.selectbox(
+        "📖 Genre",
+        options=_genre_options,
+        index=0,
+        format_func=lambda g: BOOK_GENRES.get(g, g),
+        help=(
+            "**Educational** — curriculum + activities + QR codes (default)\n"
+            "**Poetry** — poem sections, no activities\n"
+            "**Fairy Tale** — narrative story chapters\n"
+            "**Personal Development** — adult non-fiction prose chapters"
+        ),
+        key="book_genre",
+    )
 with c7:
+    num_chapters = st.slider("📑 Ch.", 2, 12, 2)
+with c8:
     pages_per_chapter = st.slider("📄 Pages/Ch", 1, 20, 1)
+
+if book_genre != "educational":
+    _genre_desc = {
+        "poetry":               "Each chapter = a thematic poem section. No activities, QR codes, or curriculum blocks.",
+        "fairy_tale":           "Each chapter = immersive narrative prose. No educational structure.",
+        "personal_development": "Each chapter = self-help non-fiction prose (hook → insight → framework → reflection).",
+    }.get(book_genre, "")
+    st.info(f"{BOOK_GENRES[book_genre]} — {_genre_desc}", icon="ℹ️")
 
 # ── Visual Template & Palette ────────────────────────────────────────────
 _tc8, _tc9 = st.columns(2)
@@ -1664,7 +1865,8 @@ if run_full_generation:
         country=country,
         learning_method=learning_method,
         num_chapters=num_chapters,
-        pages_per_chapter=pages_per_chapter
+        pages_per_chapter=pages_per_chapter,
+        genre=book_genre,
     )
     request = _request_from_chat_or_form(generation_source, form_request)
 
@@ -1716,30 +1918,50 @@ if run_full_generation:
             audio_dir_path.mkdir(parents=True, exist_ok=True)
 
         _gen_t0 = time.perf_counter()
-        curriculum, full_chapters = asyncio.run(
-            generate_book_async(
-                request,
-                runtime["generate_images"],
-                runtime["use_qwen_models"],
-                qwen_region,
-                str(images_dir_path),
-                text_model=runtime["qwen_text_model"],
-                image_model=qwen_image_model,
-                images_per_chapter=runtime["images_per_chapter"],
-                use_ddg_images=runtime["use_ddg_images"],
-                enable_video_search=enable_video_search,
-                enable_tts=runtime["enable_tts"],
-                tts_voice=runtime["tts_voice"],
-                tts_model=runtime["tts_model"],
-                tts_audio_format=runtime["tts_audio_format"],
-                tts_speech_rate=runtime["tts_speech_rate"],
-                audio_dir=str(audio_dir_path),
-                art_style=art_style,
-                voice_clone_profile=active_clone_profile,
-                max_tokens_curriculum=max_tokens_curriculum,
-                max_tokens_chapter=max_tokens_chapter,
+
+        # ── Route based on genre ────────────────────────────────────────
+        _genre = getattr(request, "genre", "educational")
+        if _genre != "educational":
+            _progress_ph = st.empty()
+            def _genre_progress(msg: str):
+                _progress_ph.info(msg)
+            curriculum, full_chapters = asyncio.run(
+                _generate_genre_book_async(
+                    request,
+                    use_qwen=runtime["use_qwen_models"],
+                    model_id=runtime["qwen_text_model"],
+                    provider=os.getenv("MODEL_PROVIDER", "github"),
+                    max_tokens_outline=max_tokens_curriculum,
+                    max_tokens_chapter=max_tokens_chapter,
+                    progress_callback=_genre_progress,
+                )
             )
-        )
+            _progress_ph.empty()
+        else:
+            curriculum, full_chapters = asyncio.run(
+                generate_book_async(
+                    request,
+                    runtime["generate_images"],
+                    runtime["use_qwen_models"],
+                    qwen_region,
+                    str(images_dir_path),
+                    text_model=runtime["qwen_text_model"],
+                    image_model=qwen_image_model,
+                    images_per_chapter=runtime["images_per_chapter"],
+                    use_ddg_images=runtime["use_ddg_images"],
+                    enable_video_search=enable_video_search,
+                    enable_tts=runtime["enable_tts"],
+                    tts_voice=runtime["tts_voice"],
+                    tts_model=runtime["tts_model"],
+                    tts_audio_format=runtime["tts_audio_format"],
+                    tts_speech_rate=runtime["tts_speech_rate"],
+                    audio_dir=str(audio_dir_path),
+                    art_style=art_style,
+                    voice_clone_profile=active_clone_profile,
+                    max_tokens_curriculum=max_tokens_curriculum,
+                    max_tokens_chapter=max_tokens_chapter,
+                )
+            )
         
         if not curriculum or not full_chapters:
             print("\n❌ Book generation failed - curriculum or chapters is None\n")

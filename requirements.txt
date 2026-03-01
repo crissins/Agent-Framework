@@ -1,5 +1,5 @@
 # Core Dependencies
-agent-framework==1.0.0b260212
+agent-framework==1.0.0b260107
 python-dotenv
 
 # HTTP Server & Agent Inspector Integration
@@ -37,7 +37,6 @@ aiohttp
 # Optional: Video & Search Support
 qrcode
 Pillow
-pillow
 ddgs
 curl_cffi
 

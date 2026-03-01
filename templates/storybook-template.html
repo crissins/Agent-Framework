@@ -400,13 +400,14 @@ body {
 /* ═══════════════════════════════════════
    PRINT & RESPONSIVE
 ═══════════════════════════════════════ */
+@page { size: A4 portrait; margin: 0; }
 @media print {
   html, body { background: white; padding: 0; }
   .book-cover, .book-page {
-    box-shadow: none; page-break-after: always;
-    margin: 0; width: 100%;
+    box-shadow: none; page-break-after: always; break-after: page;
+    margin: 0; width: 210mm; height: 297mm; overflow: hidden;
   }
-  .book-page { min-height: auto; }
+  .ch-measure { display: none; }
 }
 @media (max-width: 720px) {
   :root { --page-w: 100%; --pad-x: 26px; --pad-top: 36px; }

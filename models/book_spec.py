@@ -1,5 +1,13 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel
+
+# Supported book genres
+BOOK_GENRES = {
+    "educational":          "📚 Educational (default)",
+    "poetry":               "🎭 Poetry Collection",
+    "fairy_tale":           "🧚 Fairy Tale / Story",
+    "personal_development": "🌱 Personal Development",
+}
 
 class BookRequest(BaseModel):
     topic: str
@@ -9,6 +17,7 @@ class BookRequest(BaseModel):
     learning_method: str
     num_chapters: int = 8
     pages_per_chapter: int = 12
+    genre: str = "educational"   # one of BOOK_GENRES keys
 
 class ChapterOutline(BaseModel):
     title: str
