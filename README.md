@@ -28,7 +28,7 @@
 
 ## 🎯 Why This Matters
 
-**350 million children** in Latin America deserve educational content that reflects their culture, language, and reality. Yet most AI-generated educational material is US/Euro-centric and English-only.
+**Millions of children** in Latin America deserve educational content that reflects their culture, language, and reality. Yet most AI-generated educational material is US/Euro-centric and English-only.
 
 **LATAM Book Generator** solves this by orchestrating **16 specialized AI agents** into a production pipeline that produces **complete, publication-ready educational books** — tailored to specific countries, age groups, and pedagogical methods — in Spanish, Portuguese, or English — with AI illustrations, audiobook narration, and even **voice cloning** so a parent or teacher can narrate in their own voice.
 
