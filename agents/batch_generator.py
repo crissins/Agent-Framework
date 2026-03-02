@@ -306,8 +306,11 @@ def _run_job_in_thread(
                         if found:
                             chapter.generated_images = found
                             inject_md = "\n".join(f"![illustration]({_rel(p)})" for p in found)
+                            # Strip any inline images already in the LLM output
+                            _clean_md = re.sub(r'!\[[^\]]*\]\([^)]+\)', '',
+                                               chapter.markdown_content or '')
                             chapter.markdown_content = (
-                                re.sub(r'\[IMAGE:[^\]]*\]', '', chapter.markdown_content or '', count=len(found))
+                                re.sub(r'\[IMAGE:[^\]]*\]', '', _clean_md)
                                 + f"\n\n{inject_md}"
                             )
                             log_fn(f"🖼️ {len(found)} DDG image(s) → {chapter.chapter_title[:40]}")
@@ -404,12 +407,16 @@ def _run_job_in_thread(
                     if _found2:
                         _chapter.generated_images = _found2
                         _inject = "\n".join(f"![illustration]({_rel(p)})" for p in _found2)
+                        # Strip any inline images already in the LLM output before
+                        # injecting the real ones — prevents duplicates if the model
+                        # emitted !……() markdown itself instead of [IMAGE:] placeholders.
+                        _clean_md = re.sub(r'!\[[^\]]*\]\([^)]+\)', '',
+                                           _chapter.markdown_content or '')
                         _chapter.markdown_content = (
                             re.sub(
                                 r'\[IMAGE:[^\]]*\]',
                                 '',
-                                _chapter.markdown_content or '',
-                                count=len(_found2),
+                                _clean_md,
                             )
                             + f"\n\n{_inject}"
                         )

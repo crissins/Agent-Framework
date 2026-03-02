@@ -15,13 +15,37 @@ class ModelProvider(Enum):
 
 
 # ── TTS / Voice Configuration ────────────────────────────────────────────
+# Standard (non-clone) TTS models shown in the sidebar selectbox.
 TTS_MODELS = {
-    "qwen3-tts-vc-realtime": "Qwen3 TTS-VC Realtime – Voice cloning (Singapore)",
+    "qwen3-tts-flash":          "🔊 TTS Flash — Fast & cost-effective",
+    "qwen3-tts-instruct-flash": "🎭 TTS Instruct Flash — Emotion & character control",
+    "qwen3-tts-vd-2026-01-26":  "🎨 TTS Voice Design — Custom voice from text description",
+}
+
+# Scenario / recommended-use description shown as sidebar help text.
+TTS_MODEL_SCENARIOS = {
+    "qwen3-tts-flash": (
+        "📌 Best for: e-learning narration, batch audiobooks, navigation, notifications.\n"
+        "Per-character billing. Rich voice options. Multi-language support."
+    ),
+    "qwen3-tts-instruct-flash": (
+        "📌 Best for: audiobooks, radio drama, game / animation dubbing.\n"
+        "LLM auto-generates voice direction (pitch, rate, emotion, character personality)."
+    ),
+    "qwen3-tts-vd-2026-01-26": (
+        "📌 Best for: brand-specific voices, exclusive voiceprints.\n"
+        "Designs a custom voice from a text description — no audio sample needed."
+    ),
+    "qwen3-tts-vc-2026-01-22": (
+        "📌 Best for: voice cloning from audio samples.\n"
+        "Replicates a voice with high fidelity. Requires 'Use Cloned Voice' enabled."
+    ),
 }
 
 # ── Voice Clone (Qwen3 TTS-VC) Configuration ─────────────────────────────
+# Used automatically when "Use Cloned Voice" is enabled. Not shown in standard selectbox.
 VC_MODELS = {
-    "qwen3-tts-vc-realtime-2025-11-27": "Qwen3 TTS-VC Realtime – Voice cloning (Singapore)",
+    "qwen3-tts-vc-2026-01-22": "🎤 TTS Voice Clone — Replicate voice from audio sample",
 }
 
 TTS_VOICES = {

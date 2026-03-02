@@ -31,7 +31,7 @@ if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
 import streamlit as st
 from dotenv import load_dotenv
 from models.book_spec import BookRequest, Curriculum, ChapterContent, BookOutput, AudioNarration
-from config import validate_api_keys, TTS_MODELS, TTS_VOICES, TTS_AUDIO_FORMATS, VC_MODELS
+from config import validate_api_keys, TTS_MODELS, TTS_VOICES, TTS_AUDIO_FORMATS, VC_MODELS, TTS_MODEL_SCENARIOS
 from models.template_registry import template_choices, list_template_ids, get_template, auto_pick_template
 
 # Import agents
@@ -862,12 +862,26 @@ with st.sidebar:
 
         # ── Standard voice controls (disabled when using cloned voice) ──
         _using_clone = use_cloned_voice and _has_cloned_voices and enable_tts
-        tts_model = st.selectbox(
-            "TTS Model",
-            list(TTS_MODELS.keys()),
-            format_func=lambda k: TTS_MODELS[k],
-            disabled=not enable_tts or _using_clone,
-        )
+
+        # When cloning, auto-select the VC model; otherwise show the standard model picker.
+        if _using_clone:
+            tts_model = list(VC_MODELS.keys())[0]
+            st.caption(
+                f"🎤 **TTS Model (auto):** {VC_MODELS[tts_model]}  \n"
+                f"{TTS_MODEL_SCENARIOS.get(tts_model, '')}"
+            )
+        else:
+            _sel_model = st.selectbox(
+                "🎙️ TTS Model",
+                list(TTS_MODELS.keys()),
+                format_func=lambda k: TTS_MODELS[k],
+                disabled=not enable_tts,
+                key="tts_model_select",
+            )
+            tts_model = _sel_model
+            if enable_tts and tts_model in TTS_MODEL_SCENARIOS:
+                st.caption(TTS_MODEL_SCENARIOS[tts_model])
+
         tts_voice = st.selectbox(
             "🗣️ Voice",
             list(TTS_VOICES.keys()),

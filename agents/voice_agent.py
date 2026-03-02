@@ -168,6 +168,89 @@ AUDIO_FORMATS = {
     "wav_44k": "WAV 24kHz mono 16-bit",
 }
 
+# ── Standard (non-clone) TTS models dispatched to SpeechSynthesizer ──────
+_STANDARD_TTS_MODELS = {
+    "qwen3-tts-flash",
+    "qwen3-tts-instruct-flash",
+    "qwen3-tts-vd-2026-01-26",
+}
+
+
+def _synthesize_standard_model(
+    text: str,
+    voice: str = "longxiaochun",
+    model: str = "qwen3-tts-flash",
+    instruction: Optional[str] = None,
+) -> Optional[bytes]:
+    """
+    Synthesize speech via dashscope.audio.tts_v2.SpeechSynthesizer.
+    Used for non-VC models (flash, instruct-flash, voice-design).
+    """
+    try:
+        from dashscope.audio.tts_v2 import SpeechSynthesizer
+    except ImportError:
+        logger.warning("[TTS-Standard] dashscope.audio.tts_v2 not available")
+        return None
+
+    api_key = _get_api_key()
+    if not api_key:
+        return None
+
+    _configure_dashscope()
+    try:
+        synth = SpeechSynthesizer(model=model, voice=voice, api_key=api_key)
+        if instruction:
+            audio_bytes = synth.call(text, instruction=instruction)
+        else:
+            audio_bytes = synth.call(text)
+        if audio_bytes:
+            raw = bytes(audio_bytes)
+            logger.info(
+                f"✅ [TTS-Standard] OK — model={model}, voice={voice}, "
+                f"{len(raw):,} bytes" + (f", instruction=‘{instruction[:40]}…’" if instruction else "")
+            )
+            return raw
+        return None
+    except Exception as exc:
+        logger.error(f"❌ [TTS-Standard] Exception: {type(exc).__name__}: {exc}")
+        return None
+
+
+def _get_voice_instruction(chapter_title: str, language: str = "es") -> str:
+    """
+    Call a fast LLM to produce a one-sentence voice direction for
+    qwen3-tts-instruct-flash (tone, energy, emotion).
+    Falls back to empty string on any error.
+    """
+    try:
+        from openai import OpenAI as _OAI
+        _api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not _api_key:
+            return ""
+        _client = _OAI(
+            api_key=_api_key,
+            base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        )
+        _resp = _client.chat.completions.create(
+            model="qwen3.5-flash",
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"In ONE SHORT sentence (max 12 words), describe the ideal "
+                    f"voice style to narrate this educational chapter: \"{chapter_title}\". "
+                    f"Focus on tone and emotional energy only. Reply in {language}."
+                ),
+            }],
+            max_tokens=40,
+            extra_body={"enable_thinking": False},
+        )
+        instr = _resp.choices[0].message.content.strip().strip('"\'')
+        logger.info(f"🎭 [TTS-Instruct] Generated instruction: ‘{instr}’")
+        return instr
+    except Exception as exc:
+        logger.warning(f"[TTS-Instruct] Instruction generation failed: {exc}")
+        return ""
+
 
 def _get_api_key() -> Optional[str]:
     """Get DashScope API key from environment."""
@@ -545,32 +628,41 @@ def synthesize_speech(
     speech_rate: float = 1.0,
     pitch_rate: float = 1.0,
     language: str = "es",
+    instruction: Optional[str] = None,
 ) -> Optional[bytes]:
     """
-    Synthesize speech from text using QwenTtsRealtime (Singapore).
+    Synthesize speech from text.
 
-    Auto-enrolls a voice via Edge TTS if needed, then synthesizes
-    via WebSocket using the Qwen3 TTS-VC realtime model.
+    Standard models (qwen3-tts-flash, qwen3-tts-instruct-flash,
+    qwen3-tts-vd-2026-01-26) are dispatched to SpeechSynthesizer.
+    Voice-clone models use QwenTtsRealtime (Singapore WebSocket).
 
     Args:
         text: Text to synthesize (UTF-8, any language)
         voice: Voice name (maps to Edge TTS voice for enrollment)
-        model: TTS model name (ignored, always uses Qwen3 TTS-VC)
+        model: TTS model name
         audio_format: Output format (always WAV 24kHz currently)
         volume: Volume 0-100 (not yet supported by QwenTtsRealtime)
         speech_rate: Speed (not yet supported by QwenTtsRealtime)
         pitch_rate: Pitch (not yet supported by QwenTtsRealtime)
         language: Language code for auto-enrollment reference text
+        instruction: Optional voice direction (used by instruct-flash model)
 
     Returns:
         Audio bytes (WAV format) or None on failure
     """
     language = normalize_language(language)
     logger.info(
-        f"🔊 [TTS] synthesize_speech called — "
-        f"voice={voice}, model=qwen3-tts-vc-realtime, "
+        f"🔊 [TTS] synthesize_speech — "
+        f"model={model}, voice={voice}, "
         f"text_len={len(text)} chars, language={language}"
     )
+
+    # ── Standard (non-VC) models → SpeechSynthesizer path ────────────────
+    if model in _STANDARD_TTS_MODELS:
+        return _synthesize_standard_model(text, voice, model, instruction)
+
+    # ── Voice-clone models → QwenTtsRealtime path (original flow) ───────
     logger.debug(f"[TTS] Text preview: {text[:120]}..." if len(text) > 120 else f"[TTS] Text: {text}")
 
     api_key = _get_api_key()
@@ -1024,6 +1116,11 @@ def narrate_chapter(
         f"{narration_text[:200]}..."
     )
 
+    # For instruct-flash, generate a voice direction once (reused for all chunks)
+    _voice_instruction: Optional[str] = None
+    if model == "qwen3-tts-instruct-flash":
+        _voice_instruction = _get_voice_instruction(chapter_title, language)
+
     # Synthesize each chunk
     all_audio: List[bytes] = []
     for i, chunk in enumerate(chunks):
@@ -1041,6 +1138,7 @@ def narrate_chapter(
                 speech_rate=speech_rate,
                 pitch_rate=pitch_rate,
                 language=language,
+                instruction=_voice_instruction,
             )
         except Exception as e:
             logger.error(
