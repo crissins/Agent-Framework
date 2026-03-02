@@ -1037,24 +1037,8 @@ with _tab_batch:
     # ── Job builder ────────────────────────────────────────────────────────
     st.markdown("#### 📋 Configure Jobs")
 
-    # ── Global batch options (use sidebar settings) ────────────────────
-    _bopt_a, _bopt_b = st.columns(2)
-    _batch_generate_images = _bopt_a.checkbox(
-        "🖼️ Generate Images",
-        value=False,
-        key="batch_generate_images",
-        help="Adds images to each chapter using the Image Source configured in the sidebar ‘🖼️ Images & Video’ section.",
-    )
-    _batch_enable_tts = _bopt_b.checkbox(
-        "🔊 Generate Audio Narration",
-        value=False,
-        key="batch_enable_tts",
-        help="Generates spoken narration for every chapter using the Voice & Audio settings from the sidebar.",
-    )
-    if _batch_generate_images:
-        st.caption("🖼️ Images: configure source, count, and style per job below.")
-    if _batch_enable_tts:
-        st.caption(f"🔊 Audio: {tts_voice} · {tts_model} · {tts_audio_format} · rate={tts_speech_rate}")
+    # ── Each job is fully independent ──────────────────────────────────────────────────
+    st.caption("💡 Every setting — images, audio, tokens — is configured independently per job.")
     st.divider()
 
     _batch_topic_default = "Emotional Intelligence for Teenagers"
@@ -1119,21 +1103,32 @@ with _tab_batch:
                 key=f"bj_country_{idx}",
             )
 
-            _opt_a, _opt_b = st.columns(2)
-            _batch_job_youtube = _opt_a.checkbox(
-                "🎬 YouTube Video Search",
+            # ── Feature toggles ────────────────────────────────────────────────────
+            _ft_a, _ft_b, _ft_c = st.columns(3)
+            _batch_job_youtube = _ft_a.checkbox(
+                "🎬 YouTube Search",
                 value=False,
                 key=f"bj_yt_{idx}",
                 help="Find relevant YouTube videos and embed QR codes in each chapter.",
             )
+            _job_enable_images = _ft_b.checkbox(
+                "🖼️ Generate Images",
+                value=False,
+                key=f"bj_img_en_{idx}",
+            )
+            _job_enable_tts = _ft_c.checkbox(
+                "🔊 Audio Narration",
+                value=False,
+                key=f"bj_tts_en_{idx}",
+            )
 
-            # ── Per-job image settings (only shown when global images toggle is on) ──
+            # ── Image settings ──────────────────────────────────────────────────────
             _job_gen_images = False
             _job_ddg_images = False
             _job_images_per_chapter = 0
-            _job_image_model = qwen_image_model
+            _job_image_model = "qwen-image-plus"
             _job_art_style = "auto"
-            if _batch_generate_images:
+            if _job_enable_images:
                 _img_row_a, _img_row_b, _img_row_c, _img_row_d = st.columns([2, 1, 2, 2])
                 _job_img_source = _img_row_a.radio(
                     "🖼️ Image Source",
@@ -1177,6 +1172,38 @@ with _tab_batch:
                 if _job_img_source == "None":
                     _job_images_per_chapter = 0
 
+            # ── Audio settings ──────────────────────────────────────────────────────
+            _job_tts_voice = tts_voice
+            _job_tts_rate = tts_speech_rate
+            if _job_enable_tts:
+                _tts_ca, _tts_cb = st.columns(2)
+                _job_tts_voice = _tts_ca.selectbox(
+                    "🎤 Voice",
+                    list(TTS_VOICES.keys()),
+                    index=list(TTS_VOICES.keys()).index(tts_voice) if tts_voice in TTS_VOICES else 0,
+                    format_func=lambda v: TTS_VOICES.get(v, v),
+                    key=f"bj_tts_voice_{idx}",
+                )
+                _job_tts_rate = _tts_cb.slider(
+                    "🎧 Speech Rate",
+                    min_value=0.5, max_value=2.0, value=float(tts_speech_rate), step=0.05,
+                    key=f"bj_tts_rate_{idx}",
+                )
+
+            # ── Max tokens ──────────────────────────────────────────────────────────
+            with st.expander("⚙️ Advanced: Tokens", expanded=False):
+                _tok_a, _tok_b = st.columns(2)
+                _job_max_tok_cur = _tok_a.number_input(
+                    "📚 Curriculum tokens",
+                    min_value=500, max_value=8000, value=2000, step=100,
+                    key=f"bj_tok_cur_{idx}",
+                )
+                _job_max_tok_ch = _tok_b.number_input(
+                    "📝 Chapter tokens",
+                    min_value=500, max_value=16000, value=4000, step=100,
+                    key=f"bj_tok_ch_{idx}",
+                )
+
             return BatchJobSpec(
                 job_id=f"job_{idx + 1}",
                 label=_lbl,
@@ -1189,6 +1216,8 @@ with _tab_batch:
                 target_audience_age=int(_age),
                 country=_country,
                 learning_method="Project-Based Learning",
+                max_tokens_curriculum=int(_job_max_tok_cur),
+                max_tokens_chapter=int(_job_max_tok_ch),
                 # ── image settings per job ──────────────────────────────
                 generate_images=_job_gen_images,
                 use_ddg_images=_job_ddg_images,
@@ -1197,12 +1226,12 @@ with _tab_batch:
                 art_style=_job_art_style,
                 # ── YouTube settings ────────────────────────────────────
                 enable_youtube_search=_batch_job_youtube,
-                # ── TTS settings from sidebar ───────────────────────────
-                enable_tts=_batch_enable_tts,
-                tts_voice=tts_voice,
+                # ── TTS settings per job ────────────────────────────────
+                enable_tts=_job_enable_tts,
+                tts_voice=_job_tts_voice,
                 tts_model=tts_model,
                 tts_audio_format=tts_audio_format,
-                tts_speech_rate=tts_speech_rate,
+                tts_speech_rate=_job_tts_rate,
             )
 
     _num_jobs = st.slider("Number of parallel jobs", 1, 6, 3, key="batch_num_jobs")
