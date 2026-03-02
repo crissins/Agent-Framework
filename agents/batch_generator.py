@@ -79,7 +79,7 @@ class BatchJobSpec:
     enable_youtube_search: bool = False    # ── TTS / Audio settings ─────────────────────────────────────────────
     enable_tts: bool = False
     tts_voice: str = "longxiaochun"
-    tts_model: str = "qwen3-tts-vc-realtime"
+    tts_model: str = "qwen3-tts-flash"
     tts_audio_format: str = "wav_24k"
     tts_speech_rate: float = 0.95
 

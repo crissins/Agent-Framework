@@ -622,7 +622,7 @@ def _pcm_to_wav(
 def synthesize_speech(
     text: str,
     voice: str = "longxiaochun",
-    model: str = "qwen3-tts-vc-realtime",
+    model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     volume: int = 60,
     speech_rate: float = 1.0,
@@ -798,7 +798,7 @@ def synthesize_speech(
 async def synthesize_speech_async(
     text: str,
     voice: str = "longxiaochun",
-    model: str = "qwen3-tts-vc-realtime",
+    model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     volume: int = 60,
     speech_rate: float = 1.0,
@@ -823,7 +823,7 @@ def synthesize_to_file(
     text: str,
     output_path: str,
     voice: str = "longxiaochun",
-    model: str = "qwen3-tts-vc-realtime",
+    model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     volume: int = 60,
     speech_rate: float = 1.0,
@@ -1051,7 +1051,7 @@ def narrate_chapter(
     markdown_content: str,
     output_dir: str,
     voice: str = "longxiaochun",
-    model: str = "qwen3-tts-vc-realtime",
+    model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     volume: int = 60,
     speech_rate: float = 0.95,
@@ -1226,7 +1226,7 @@ async def narrate_chapter_async(
     markdown_content: str,
     output_dir: str,
     voice: str = "longxiaochun",
-    model: str = "qwen3-tts-vc-realtime",
+    model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     **kwargs,
 ) -> Optional[AudioNarration]:
@@ -1247,7 +1247,7 @@ async def narrate_book(
     chapters: list,
     output_dir: str,
     voice: str = "longxiaochun",
-    model: str = "qwen3-tts-vc-realtime",
+    model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     volume: int = 60,
     speech_rate: float = 0.95,
@@ -1274,7 +1274,7 @@ async def narrate_book(
     _book_t0 = time.perf_counter()
     logger.info(
         f"📚 [NarrateBook] Starting full book narration — "
-        f"{len(chapters)} chapters, voice={voice}, model=qwen3-tts-vc-realtime, "
+        f"{len(chapters)} chapters, voice={voice}, model={model}, "
         f"format={audio_format}, rate={speech_rate}"
     )
 

@@ -390,7 +390,7 @@ async def generate_and_narrate_book(
     book_request: BookRequest,
     output_dir: str,
     voice: str = "longxiaochun",
-    tts_model: str = "qwen3-tts-vc-realtime",
+    tts_model: str = "qwen3-tts-flash",
     audio_format: str = "wav_24k",
     speech_rate: float = 0.95,
     use_qwen: bool = False,

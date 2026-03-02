@@ -1837,7 +1837,7 @@ async def generate_book_async(
     enable_video_search: bool = False,
     enable_tts: bool = False,
     tts_voice: str = "longxiaochun",
-    tts_model: str = "qwen3-tts-vc-realtime",
+    tts_model: str = "qwen3-tts-flash",
     tts_audio_format: str = "wav_24k",
     tts_speech_rate: float = 0.95,
     audio_dir: str = "./books/audio",
@@ -1878,7 +1878,7 @@ async def generate_book_async(
 
         if _using_clone:
             vc_voice = voice_clone_profile.get("voice")
-            vc_model = voice_clone_profile.get("target_model", "qwen3-tts-vc-realtime-2025-11-27")
+            vc_model = voice_clone_profile.get("target_model", "qwen3-tts-vc-2026-01-22")
             vc_name  = voice_clone_profile.get("name", "custom_voice")
             try:
                 vc_path = await _run_sync(
@@ -2195,7 +2195,7 @@ async def generate_audio_book_only_async(
     qwen_region: str = "singapore",
     text_model: str | None = None,
     tts_voice: str = "longxiaochun",
-    tts_model: str = "qwen3-tts-vc-realtime",
+    tts_model: str = "qwen3-tts-flash",
     tts_audio_format: str = "wav_24k",
     tts_speech_rate: float = 0.95,
     audio_dir: str = "./books/audio",
@@ -2282,7 +2282,7 @@ async def generate_audio_book_only_async(
 
             if _using_clone:
                 vc_voice = voice_clone_profile.get("voice")
-                vc_model = voice_clone_profile.get("target_model", "qwen3-tts-vc-realtime-2025-11-27")
+                vc_model = voice_clone_profile.get("target_model", "qwen3-tts-vc-2026-01-22")
                 vc_name  = voice_clone_profile.get("name", "custom_voice")
 
                 vc_p = await asyncio.to_thread(
