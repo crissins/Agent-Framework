@@ -149,6 +149,76 @@ st.session_state.setdefault("pending_generation_mode", None)
 st.session_state.setdefault("pending_generation_source", None)
 
 
+# ── Batch background-thread singleton ─────────────────────────────────────────
+# st.cache_resource creates the dict ONCE per server process; it survives
+# Streamlit script reruns so background threads can safely write into it
+# while the UI polls on each st.rerun().
+@st.cache_resource
+def _get_batch_globals() -> dict:
+    """Singleton dict that persists across Streamlit reruns."""
+    return {
+        "running": False,
+        "done":    False,
+        "status":  {},   # job_id -> {state, log, current_step}
+        "results": None,
+        "specs":   [],
+    }
+
+
+def _render_batch_dashboard(bg: dict) -> None:
+    """Render live progress cards (green / blue / red rectangles) for each batch job."""
+    specs  = bg.get("specs",  [])
+    status = bg.get("status", {})
+    if not specs:
+        return
+
+    import re as _re2
+    def _scrub(s: str) -> str:
+        return _re2.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', '<workspace>\\', s)
+
+    _CARD_STYLE = {
+        "pending": ("#1c1c1c", "#555555"),
+        "running": ("#0d1e35", "#4da6ff"),
+        "done":    ("#0a2218", "#00c851"),
+        "error":   ("#2a0a0a", "#ff4444"),
+    }
+
+    n_cols = min(len(specs), 3)
+    cols   = st.columns(n_cols)
+
+    for i, spec in enumerate(specs):
+        col  = cols[i % n_cols]
+        js   = status.get(spec.job_id, {})
+        state  = js.get("state", "pending")
+        step   = js.get("current_step", "\u23f3 Waiting\u2026")
+        log    = js.get("log", [])
+
+        bg_col, border = _CARD_STYLE.get(state, _CARD_STYLE["pending"])
+
+        last_lines = "<br>".join(
+            _scrub(ln).replace("<", "&lt;").replace(">", "&gt;") for ln in log[-4:]
+        ) if log else "<em style='color:#666'>No output yet&hellip;</em>"
+
+        step_esc = _scrub(step).replace("<", "&lt;").replace(">", "&gt;")
+        prov_lbl = PROVIDER_LABELS.get(spec.provider, spec.provider)
+
+        card = (
+            f'<div style="background:{bg_col};border:2px solid {border};'
+            f'border-radius:10px;padding:14px 16px;margin-bottom:10px;'
+            f'font-family:monospace;min-height:160px;">'
+            f'<div style="font-weight:bold;color:#fff;font-size:13px;margin-bottom:4px;">{spec.label}</div>'
+            f'<div style="color:{border};font-size:11px;margin-bottom:8px;">'
+            f'{prov_lbl} &middot; <code style="color:{border}">{spec.model}</code></div>'
+            f'<div style="background:{border}22;border-left:3px solid {border};'
+            f'padding:6px 8px;border-radius:4px;color:{border};font-size:12px;'
+            f'font-weight:bold;margin-bottom:8px;word-break:break-word;">{step_esc}</div>'
+            f'<div style="color:#888;font-size:10px;line-height:1.5;'
+            f'border-top:1px solid #333;padding-top:6px;">{last_lines}</div>'
+            f'</div>'
+        )
+        col.markdown(card, unsafe_allow_html=True)
+
+
 async def _run_chat_turn(user_message: str) -> str:
     """Run one chat turn against the conversational agent."""
     if st.session_state.chat_agent is None:
@@ -845,10 +915,12 @@ with st.sidebar:
                 if st.button(clone_label, key="clone_save_btn"):
                     try:
                         sample_path = _save_recording_sample(latest_recording["bytes"], preferred_clone_name)
+                        # API requires lowercase alphanumeric only — strip underscores/hyphens
+                        api_safe_name = re.sub(r'[^a-z0-9]', '', slug_name)[:60] or "myvoice"
                         voice_param = create_cloned_voice(
                             sample_path,
                             target_model=clone_model,
-                            preferred_name=slug_name,
+                            preferred_name=api_safe_name,
                             region=qwen_region,
                         )
                         profile = {
@@ -864,7 +936,8 @@ with st.sidebar:
                         st.success(f"Voice cloned: '{slug_name}'")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"❌ Clone failed: {e}")
+                        st.warning(f"⚠️ Voice enrollment failed — {e}")
+                        st.caption("Your recording is saved. Check your DashScope key / region and try again.")
 
                 if st.button("🧹 Clear recordings", key="voice_clear_btn"):
                     st.session_state.voice_recordings = []
@@ -905,6 +978,26 @@ with _tab_batch:
 
     # ── Job builder ────────────────────────────────────────────────────────
     st.markdown("#### 📋 Configure Jobs")
+
+    # ── Global batch options (use sidebar settings) ────────────────────
+    _bopt_a, _bopt_b = st.columns(2)
+    _batch_generate_images = _bopt_a.checkbox(
+        "🖼️ Generate Images",
+        value=False,
+        key="batch_generate_images",
+        help="Adds images to each chapter using the Image Source configured in the sidebar ‘🖼️ Images & Video’ section.",
+    )
+    _batch_enable_tts = _bopt_b.checkbox(
+        "🔊 Generate Audio Narration",
+        value=False,
+        key="batch_enable_tts",
+        help="Generates spoken narration for every chapter using the Voice & Audio settings from the sidebar.",
+    )
+    if _batch_generate_images:
+        st.caption(f"🖼️ Images: {'AI Generate' if generate_images else ('DDG Search' if use_ddg_images else 'None')} · {images_per_chapter}/chapter · style={art_style}")
+    if _batch_enable_tts:
+        st.caption(f"🔊 Audio: {tts_voice} · {tts_model} · {tts_audio_format} · rate={tts_speech_rate}")
+    st.divider()
 
     _batch_topic_default = "Emotional Intelligence for Teenagers"
 
@@ -968,6 +1061,18 @@ with _tab_batch:
                 target_audience_age=14,
                 country="World wide",
                 learning_method="Project-Based Learning",
+                # ── image settings from sidebar ─────────────────────────
+                generate_images=generate_images if _batch_generate_images else False,
+                use_ddg_images=use_ddg_images if _batch_generate_images else False,
+                images_per_chapter=images_per_chapter if _batch_generate_images else 0,
+                image_model=qwen_image_model,
+                art_style=art_style,
+                # ── TTS settings from sidebar ───────────────────────────
+                enable_tts=_batch_enable_tts,
+                tts_voice=tts_voice,
+                tts_model=tts_model,
+                tts_audio_format=tts_audio_format,
+                tts_speech_rate=tts_speech_rate,
             )
 
     _num_jobs = st.slider("Number of parallel jobs", 1, 6, 3, key="batch_num_jobs")
@@ -985,27 +1090,67 @@ with _tab_batch:
     )
 
     if _run_batch_clicked and _specs:
+        import threading as _threading
+        _bg = _get_batch_globals()
+        _init_status = {
+            s.job_id: {"state": "pending", "log": [], "current_step": "⏳ Waiting…"}
+            for s in _specs
+        }
+        _bg["running"] = True
+        _bg["done"]    = False
+        _bg["results"] = None
+        _bg["specs"]   = list(_specs)
+        _bg["status"]  = _init_status
         st.session_state.batch_running = True
         st.session_state.batch_results = None
-        st.session_state.batch_status = {s.job_id: {"state": "pending", "log": []} for s in _specs}
-        # Run synchronously (blocking) — Streamlit re-runs the script after
-        with st.spinner(f"Running {len(_specs)} parallel book generation job(s)…"):
-            _results, _status = run_batch_parallel(_specs)
-        st.session_state.batch_results = _results
-        st.session_state.batch_status = _status
-        st.session_state.batch_running = False
+
+        def _bg_run_batch(_s=list(_specs), _st=_init_status, _bg_ref=_bg):
+            try:
+                _res, _ = run_batch_parallel(_s, status_dict=_st)
+                _bg_ref["results"] = _res
+            except Exception as _exc:
+                _bg_ref["results"] = []
+            finally:
+                _bg_ref["done"]    = True
+                _bg_ref["running"] = False
+
+        _threading.Thread(target=_bg_run_batch, daemon=True).start()
         st.rerun()
 
-    # ── Live/completed results ──────────────────────────────────────────────
+    # ── Resolve cache-resource batch globals ─────────────────────────────────
+    _bg = _get_batch_globals()
+
+    # ── If batch just completed, move results into session_state ─────────────
+    if st.session_state.batch_running and _bg["done"]:
+        st.session_state.batch_results = _bg["results"]
+        st.session_state.batch_running = False
+        _bg["done"] = False
+        st.rerun()
+
+    # ── Live progress dashboard (auto-polls every 1.5 s) ─────────────────────
+    if st.session_state.batch_running and not _bg["done"]:
+        _live_specs = _bg.get("specs", _specs)
+        st.markdown(f"#### ⚡ Running {len(_live_specs)} job(s) in parallel…")
+        _render_batch_dashboard(_bg)
+        time.sleep(1.5)
+        st.rerun()
+
+    # ── Completed results ─────────────────────────────────────────────────────
     if st.session_state.batch_results:
         st.markdown("#### 📊 Results")
         _results: list = st.session_state.batch_results
 
-        # Summary table
+        # Sanitize a log line: strip absolute workspace paths
+        import re as _re
+        def _sanitize_log(line: str) -> str:
+            # Remove any Windows absolute path up to and including the workspace folder name
+            return _re.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', '<workspace>\\', line)
+
+        # Summary table — 7 columns
         _col_hdrs = st.columns([2, 2, 1, 1, 1, 1, 1])
         for _h, _t in zip(
             _col_hdrs,
-            ["Label", "Model", "Status", "Time", "Chapters", "Words", "Tokens"],
+            ["Label", "Provider / Model", "Status", "Time", "Chapters", "Words", "Tokens"],
         ):
             _h.markdown(f"**{_t}**")
         st.divider()
@@ -1013,7 +1158,7 @@ with _tab_batch:
         for _r in sorted(_results, key=lambda r: r.job_id):
             _rc = st.columns([2, 2, 1, 1, 1, 1, 1])
             _rc[0].write(_r.label)
-            _rc[1].write(f"`{_r.model}`")
+            _rc[1].write(f"{PROVIDER_LABELS.get(_r.provider, _r.provider)} `{_r.model}`")
             if _r.success:
                 _rc[2].success("✅ Done")
             else:
@@ -1023,30 +1168,41 @@ with _tab_batch:
             _rc[5].write(f"{_r.word_count:,}" if _r.success else "—")
             _rc[6].write(f"{_r.tokens_est:,}" if _r.success else "—")
 
+            # Inline error summary — shown immediately, with paths scrubbed
+            if not _r.success:
+                _err_time = f"{_r.elapsed_sec:.0f}s" if _r.elapsed_sec else "?"
+                _err_toks = f"~{_r.tokens_est:,} tokens" if _r.tokens_est else "no tokens recorded"
+                _safe_err = _sanitize_log(_r.error)
+                st.error(
+                    f"❌ **{_r.label}** failed after {_err_time} ({_err_toks}): {_safe_err}"
+                )
+
             # Download buttons for successful jobs
             if _r.success and _r.html_path:
                 import pathlib as _pl
                 _html_file = _pl.Path(_r.html_path)
-                if _html_file.exists():
+                try:
                     with open(_html_file, "rb") as _hf:
-                        st.download_button(
-                            f"📥 {_r.label} — HTML",
-                            data=_hf,
-                            file_name=_html_file.name,
-                            mime="text/html",
-                            key=f"dl_html_{_r.job_id}",
-                        )
+                        _file_bytes = _hf.read()
+                    _dl_name = f"book_{_r.provider}_{_r.model.replace('.','_').replace('-','_')}.html"
+                    st.download_button(
+                        f"📥 {_r.label} — HTML",
+                        data=_file_bytes,
+                        file_name=_dl_name,
+                        mime="text/html",
+                        key=f"dl_html_{_r.job_id}",
+                    )
+                except Exception as _fe:
+                    st.warning(f"⚠️ Could not load HTML for {_r.label}: {_fe}")
 
-            # Log expander
+            # Log expander — paths scrubbed
             with st.expander(f"📋 Log — {_r.label}", expanded=not _r.success):
                 if _r.error:
-                    st.error(_r.error)
+                    st.error(_sanitize_log(_r.error))
                 for _line in _r.log:
-                    st.text(_line)
+                    st.text(_sanitize_log(_line))
 
-    elif st.session_state.batch_running:
-        st.info("⏳ Jobs are running… refresh the page to see progress.")
-    else:
+    elif not st.session_state.batch_running:
         st.info("Configure jobs above and click **Run** to start parallel generation.")
 
 
@@ -1095,6 +1251,60 @@ with _tab_form:
             "personal_development": "Each chapter = self-help non-fiction prose (hook → insight → framework → reflection).",
         }.get(book_genre, "")
         st.info(f"{BOOK_GENRES[book_genre]} — {_genre_desc}", icon="ℹ️")
+
+    # ── Images ───────────────────────────────────────────────────
+    _img_a, _img_b, _img_c, _img_d, _img_e = st.columns([1, 2, 1, 2, 2])
+    with _img_a:
+        _form_enable_images = st.checkbox(
+            "🖼️ Images",
+            value=False,
+            key="form_enable_images",
+            help="Generate or search for images for each chapter.",
+        )
+    with _img_b:
+        _form_image_source = st.radio(
+            "Source",
+            ["AI Generate", "DDG Safe Search"],
+            index=0,
+            horizontal=True,
+            key="form_image_source",
+            disabled=not _form_enable_images,
+        )
+    with _img_c:
+        _form_images_per_chapter = st.number_input(
+            "Per chapter",
+            min_value=1, max_value=5, value=1, step=1,
+            key="form_images_per_chapter",
+            disabled=not _form_enable_images,
+        )
+    _form_ai_images = _form_enable_images and _form_image_source == "AI Generate"
+    _form_ddg_images = _form_enable_images and _form_image_source == "DDG Safe Search"
+    with _img_d:
+        _form_qwen_image_model = st.selectbox(
+            "🤖 Model",
+            ["qwen-image-plus", "qwen-image-max"],
+            index=0,
+            key="form_image_model",
+            disabled=not _form_ai_images,
+        )
+    with _img_e:
+        _form_art_style = st.selectbox(
+            "🎨 Style",
+            ["auto", "watercolor", "cartoon", "realistic", "flat_vector",
+             "pixel_art", "storybook", "3d_cartoon", "oil_painting",
+             "educational", "ink_painting", "low_budget"],
+            index=0,
+            key="form_art_style",
+            format_func=lambda s: {
+                "auto": "🧠 Auto", "watercolor": "🎨 Watercolor",
+                "cartoon": "🖍️ Cartoon", "realistic": "📷 Realistic",
+                "flat_vector": "📐 Flat/Vector", "pixel_art": "👾 Pixel Art",
+                "storybook": "📖 Storybook", "3d_cartoon": "🧸 3D Cartoon",
+                "oil_painting": "🖼️ Oil Painting", "educational": "📚 Educational",
+                "ink_painting": "🖌️ Ink/Sumi-e", "low_budget": "🖍️ B&W Coloring",
+            }.get(s, s),
+            disabled=not _form_ai_images,
+        )
 
     # ── Accessibility ──────────────────────────────────────────────────
     _acca, _accb, _accc = st.columns(3)
@@ -1249,6 +1459,21 @@ def _make_export_relative_path(img_path: str) -> str:
     return normalized
 
 
+# Localised label for the "Recommended Video" text appended to each chapter.
+# Add more languages as needed — falls back to English.
+_VIDEO_RECOMMENDED_LABELS: dict[str, str] = {
+    "Spanish":    "Video recomendado",
+    "English":    "Recommended video",
+    "Portuguese": "Vídeo recomendado",
+    "French":     "Vidéo recommandée",
+    "German":     "Empfohlenes Video",
+    "Italian":    "Video consigliato",
+    "Chinese":    "推荐视频",
+    "Japanese":   "おすすめ動画",
+    "Arabic":     "فيديو موصى به",
+}
+
+
 def _embed_images_in_markdown(markdown_content: str, generated_images: list) -> str:
     """Replace [IMAGE: ...] placeholders with generated images and style leftovers.
 
@@ -1285,31 +1510,33 @@ def _embed_images_in_markdown(markdown_content: str, generated_images: list) -> 
 
 
 # Approximate output-token pricing per 1M tokens (USD)
-# Sources: official pricing pages (Feb 2026 snapshot)
+# Sources: official model pricing pages (Feb 2026 snapshot).
+# We ALWAYS show the commercial list price, even when a free-tier quota is
+# available, so users see the real market value of each generation run.
 _COST_PER_1M_OUTPUT: dict[str, float] = {
-    # GitHub Models (free tier — billed when exceeding quota)
-    "gpt-4o-mini": 0.60,
-    "gpt-4o": 10.00,
-    "Meta-Llama-3.1-70B-Instruct": 0.0,
-    "Mistral-large": 0.0,
-    # Qwen / Alibaba Cloud — qwen3.5 series (free quota until 2026-05-24)
-    "qwen3.5-flash": 0.0,
-    "qwen3.5-flash-2026-02-23": 0.0,
-    "qwen3.5-35b-a3b": 0.0,
-    "qwen3.5-27b": 0.0,
-    "qwen3.5-122b-a10b": 0.0,
-    # Legacy Qwen aliases (no free quota)
-    "qwen-flash": 0.15,
-    "qwen-plus": 0.40,
-    "qwen-max": 2.00,
-    "qwen3-max": 2.60,
+    # GitHub Models  (free quota, but underlying commercial rates shown)
+    "gpt-4o-mini":                   0.60,
+    "gpt-4o":                       10.00,
+    "Meta-Llama-3.1-70B-Instruct":   0.90,   # Groq/Together commercial rate
+    "Mistral-large":                 3.00,   # Mistral official API rate
+    # Qwen / Alibaba Cloud — commercial list rates (free promo until 2026-05-24)
+    "qwen3.5-flash":                 0.15,
+    "qwen3.5-flash-2026-02-23":      0.15,
+    "qwen3.5-35b-a3b":               0.35,
+    "qwen3.5-27b":                   0.30,
+    "qwen3.5-122b-a10b":             0.90,
+    # Legacy Qwen aliases
+    "qwen-flash":                    0.15,
+    "qwen-plus":                     0.40,
+    "qwen-max":                      2.00,
+    "qwen3-max":                     2.60,
     # Anthropic Claude
-    "claude-haiku-4-5": 4.00,
-    "claude-sonnet-4-6": 15.00,
-    "claude-opus-4-6": 75.00,
+    "claude-haiku-4-5":              4.00,
+    "claude-sonnet-4-6":            15.00,
+    "claude-opus-4-6":              75.00,
     # Azure OpenAI
-    "gpt-35-turbo": 2.00,
-    "gpt-4-turbo": 30.00,
+    "gpt-35-turbo":                  2.00,
+    "gpt-4-turbo":                  30.00,
 }
 
 
@@ -1431,224 +1658,297 @@ async def generate_book_async(
     # Ensure image_model always has a valid default
     if not image_model:
         image_model = "qwen-image-plus"
-    
+
+    # ── Thread-pool helper: run any blocking/sync call without stalling the event loop ──
+    import functools
+    _loop = asyncio.get_event_loop()
+
+    async def _run_sync(fn, *args, **kwargs):
+        return await _loop.run_in_executor(None, functools.partial(fn, *args, **kwargs))
+
+    # ── Per-chapter TTS coroutine (runs concurrently with next chapter's text gen) ──
+    async def _synthesize_tts(chapter, ch_idx: int) -> "AudioNarration | None":
+        chapter_narration = None
+        _using_clone = bool(voice_clone_profile and voice_clone_profile.get("voice"))
+
+        if _using_clone:
+            vc_voice = voice_clone_profile.get("voice")
+            vc_model = voice_clone_profile.get("target_model", "qwen3-tts-vc-realtime-2025-11-27")
+            vc_name  = voice_clone_profile.get("name", "custom_voice")
+            try:
+                vc_path = await _run_sync(
+                    narrate_chapter_vc,
+                    chapter_title=chapter.chapter_title,
+                    markdown_content=chapter.markdown_content,
+                    output_dir=audio_dir,
+                    voice=vc_voice,
+                    model=vc_model,
+                    region=qwen_region,
+                )
+                if vc_path and os.path.exists(vc_path):
+                    chapter_narration = AudioNarration(
+                        chapter_title=chapter.chapter_title,
+                        file_path=str(vc_path),
+                        duration_seconds=0.0,
+                        voice_id=vc_voice,
+                        model=vc_model,
+                        format=Path(vc_path).suffix.lstrip(".") or "wav",
+                        size_bytes=os.path.getsize(vc_path),
+                    )
+                else:
+                    print(f"❌ [TTS] VC failed for ch {ch_idx+1} '{vc_name}' — attempting re-enrollment")
+            except Exception as vc_err:
+                print(f"❌ [TTS] VC exception ch {ch_idx+1}: {vc_err}")
+
+            # Auto-re-enroll when VC synthesis failed
+            if chapter_narration is None:
+                sample_path = voice_clone_profile.get("sample_path")
+                if sample_path and Path(sample_path).exists():
+                    try:
+                        api_safe = re.sub(r'[^a-z0-9]', '', vc_name.lower())[:20] or "myvoice"
+                        print(f"🔄 [TTS] Re-enrolling '{vc_name}' from {sample_path}")
+                        new_voice = await _run_sync(
+                            create_cloned_voice,
+                            sample_path,
+                            target_model=vc_model,
+                            preferred_name=api_safe,
+                            region=qwen_region,
+                        )
+                        if new_voice:
+                            voice_clone_profile["voice"] = new_voice
+                            voice_clone_profile["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                            st.session_state.voice_clone_profile = voice_clone_profile
+                            _fresh_reg = _load_voice_registry()
+                            _fresh_reg[vc_name] = voice_clone_profile
+                            _save_voice_registry(_fresh_reg)
+                            print(f"✅ [TTS] Re-enrolled {new_voice[:40]}... — retrying synthesis")
+                            vc_path2 = await _run_sync(
+                                narrate_chapter_vc,
+                                chapter_title=chapter.chapter_title,
+                                markdown_content=chapter.markdown_content,
+                                output_dir=audio_dir,
+                                voice=new_voice,
+                                model=vc_model,
+                                region=qwen_region,
+                            )
+                            if vc_path2 and os.path.exists(vc_path2):
+                                chapter_narration = AudioNarration(
+                                    chapter_title=chapter.chapter_title,
+                                    file_path=str(vc_path2),
+                                    duration_seconds=0.0,
+                                    voice_id=new_voice,
+                                    model=vc_model,
+                                    format=Path(vc_path2).suffix.lstrip(".") or "wav",
+                                    size_bytes=os.path.getsize(vc_path2),
+                                )
+                            else:
+                                print(f"❌ [TTS] Re-enrolled VC also failed for ch {ch_idx+1}. No audio.")
+                        else:
+                            print(f"❌ [TTS] Re-enrollment returned no voice for ch {ch_idx+1}. No audio.")
+                    except Exception as _re_err:
+                        print(f"❌ [TTS] Re-enrollment exception ch {ch_idx+1}: {_re_err}")
+                else:
+                    print(
+                        f"❌ [TTS] No sample for re-enrollment ch {ch_idx+1} "
+                        f"(sample_path={sample_path!r}). Please re-clone the voice."
+                    )
+
+        # Only fall back to preset TTS when no clone was selected for this run
+        if chapter_narration is None and not _using_clone:
+            print(
+                f"🔊 [TTS] Chapter {ch_idx+1}: '{chapter.chapter_title}' — "
+                f"voice={tts_voice}, model={tts_model}, format={tts_audio_format}"
+            )
+            narration = await _run_sync(
+                narrate_chapter,
+                chapter_title=chapter.chapter_title,
+                markdown_content=chapter.markdown_content,
+                output_dir=audio_dir,
+                voice=tts_voice,
+                model=tts_model,
+                audio_format=tts_audio_format,
+                speech_rate=tts_speech_rate,
+                language=request.language,
+            )
+            chapter_narration = narration
+
+        if chapter_narration:
+            print(
+                f"🔊 ✅ Narration done ch {ch_idx+1}: {chapter_narration.file_path} "
+                f"({chapter_narration.size_bytes} bytes)"
+            )
+        else:
+            print(f"⚠️ ❌ TTS FAILED for chapter {ch_idx+1}: {chapter.chapter_title}")
+        return chapter_narration
+
     try:
-        # Step 2: Generate curriculum (use selected text model when provided)
+        # Step 2: Generate curriculum
         curriculum_agent = await create_curriculum_agent(use_qwen=use_qwen_models, model_id=text_model)
         curriculum = await generate_curriculum(curriculum_agent, request, max_tokens=max_tokens_curriculum)
-        
+
         if not curriculum:
             raise ValueError("Failed to generate curriculum")
 
-        # Step 3: Generate all chapters (use selected text model when provided)
+        # Step 3: Generate chapters + media in parallel per chapter
         chapter_agent = await create_chapter_agent(use_qwen=use_qwen_models, model_id=text_model)
         context = {
             "age": request.target_audience_age,
             "country": request.country,
             "learning_method": request.learning_method,
             "language": request.language,
-            "pages_per_chapter": request.pages_per_chapter
+            "pages_per_chapter": request.pages_per_chapter,
         }
 
-        full_chapters = []
+        full_chapters: list = []
+        previous_summaries: list[str] = []
         progress_placeholder = st.empty()
-        
+        # TTS tasks fire in background — collected after all chapters are written
+        pending_tts: list[tuple[int, object, "asyncio.Task"]] = []
+
         for i, outline in enumerate(curriculum.chapters):
-            progress_placeholder.info(f"📝 Generating Chapter {i+1}/{len(curriculum.chapters)}...")
+            total = len(curriculum.chapters)
+
+            # ── Chapter text (sequential — narrative continuity via previous_summaries) ──
+            progress_placeholder.info(f"📝 Generating Chapter {i+1}/{total}...")
             chapter = await generate_chapter(
                 chapter_agent, outline, context,
                 max_tokens=max_tokens_chapter,
                 images_per_chapter=images_per_chapter if (generate_images or use_ddg_images) else 0,
             )
-            
-            if chapter:
-                # Generate N images per chapter as introduction
-                if generate_images and images_per_chapter and images_per_chapter > 0:
-                    progress_placeholder.info(
-                        f"📝 Chapter {i+1}/{len(curriculum.chapters)} - 🎨 Generating {images_per_chapter} image(s)..."
-                    )
-                    # Create clean chapter folder name
-                    chapter_folder = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in chapter.chapter_title)
-                    chapter_folder = chapter_folder.replace(' ', '_')[:50]
-                    chapter.generated_images = []
-                    # Use each [IMAGE: desc] placeholder as the unique prompt
-                    placeholder_descs = chapter.image_placeholders if hasattr(chapter, 'image_placeholders') else []
-                    for idx in range(images_per_chapter):
-                        if idx < len(placeholder_descs):
-                            img_title = placeholder_descs[idx]
-                            img_summary = placeholder_descs[idx]
-                        else:
-                            img_title = f"{chapter.chapter_title} - illustration {idx+1}"
-                            img_summary = outline.summary
-                        img = generate_chapter_image(
-                            title=img_title,
-                            summary=img_summary,
-                            output_dir=images_dir,
-                            chapter_name=chapter_folder,
-                            language=request.language,
-                            country=request.country,
-                            audience_age=request.target_audience_age,
-                            use_qwen_text=use_qwen_models,
-                            text_model=text_model,
-                            image_model=image_model,
-                            art_style=art_style,
-                        )
-                        if img:
-                            chapter.generated_images.append(img)
-                            print(f"✅ Image {idx+1} generated for chapter: {chapter.chapter_title}")
-                        else:
-                            print(f"⚠️ Failed to generate image {idx+1} for chapter: {chapter.chapter_title}")
-                            st.warning(
-                                f"⚠️ Image {idx+1} for '{chapter.chapter_title}' could not be generated. "
-                                "Check that DASHSCOPE_API_KEY is valid and your account has image quota."
-                            )
 
-                # DDG safe-search images (alternative to AI generation)
-                if use_ddg_images and images_per_chapter and images_per_chapter > 0:
-                    progress_placeholder.info(
-                        f"📝 Chapter {i+1}/{len(curriculum.chapters)} - 🔍 Searching images (DuckDuckGo)..."
-                    )
-                    chapter_folder = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in chapter.chapter_title)
-                    chapter_folder = chapter_folder.replace(' ', '_')[:50]
-                    ddg_img_dir = str(Path(images_dir) / chapter_folder)
-                    chapter.generated_images = []
-                    for idx in range(images_per_chapter):
-                        query = f"{outline.title} {outline.summary[:60]} educational children"
-                        ddg_img = await search_and_download_image(
-                            query=query,
-                            output_dir=ddg_img_dir,
-                            language=request.language.lower()[:2],
-                            country=request.country,
-                            safesearch="moderate",
-                        )
-                        if ddg_img:
-                            chapter.generated_images.append(ddg_img)
-                            print(f"✅ DDG Image {idx+1} found for chapter: {chapter.chapter_title}")
-                        else:
-                            print(f"⚠️ No DDG image found {idx+1} for chapter: {chapter.chapter_title}")
-                            st.warning(
-                                f"⚠️ No image found via DuckDuckGo for '{chapter.chapter_title}' "
-                                "(DuckDuckGo may be rate-limiting). Chapter will render without an image."
-                            )
+            if not chapter:
+                st.warning(f"⚠️ Failed to generate chapter: {outline.title}")
+                continue
 
-                # YouTube video search
-                if enable_video_search:
-                    progress_placeholder.info(
-                        f"📝 Chapter {i+1}/{len(curriculum.chapters)} - 🎬 Searching YouTube videos..."
-                    )
-                    # Extract [VIDEO: ...] queries from chapter markdown
-                    video_queries = re.findall(r'\[VIDEO:\s*([^\]]+)\]', chapter.markdown_content)
-                    if not video_queries:
-                        # Fallback: use chapter title as a single query
-                        video_queries = [f"{outline.title} {request.language} educational"]
-                    videos = await search_videos_for_chapter(
-                        chapter_title=chapter.chapter_title,
-                        video_queries=video_queries,
-                        topic=request.topic,
-                        language=request.language,
-                        country=request.country,
-                    )
-                    if videos:
-                        chapter.videos = videos
-                        for v in videos:
-                            # Embed video QR codes in markdown
+            # ── Build parallel media tasks for this chapter ─────────────────────────
+            chapter_folder = "".join(
+                c if c.isalnum() or c in (' ', '_', '-') else '_' for c in chapter.chapter_title
+            ).replace(' ', '_')[:50]
+            chapter.generated_images = []
+
+            parallel_tasks: list = []
+            task_labels: list[tuple[str, int]] = []
+
+            # AI image generation (all N images simultaneously in thread pool)
+            if generate_images and images_per_chapter:
+                placeholder_descs = getattr(chapter, 'image_placeholders', []) or []
+                for idx in range(images_per_chapter):
+                    img_title = placeholder_descs[idx] if idx < len(placeholder_descs) else f"{chapter.chapter_title} - illustration {idx+1}"
+                    img_summary = placeholder_descs[idx] if idx < len(placeholder_descs) else outline.summary
+                    parallel_tasks.append(_run_sync(
+                        generate_chapter_image,
+                        title=img_title, summary=img_summary,
+                        output_dir=images_dir, chapter_name=chapter_folder,
+                        language=request.language, country=request.country,
+                        audience_age=request.target_audience_age,
+                        use_qwen_text=use_qwen_models, text_model=text_model,
+                        image_model=image_model, art_style=art_style,
+                    ))
+                    task_labels.append(('image', idx))
+
+            # DDG image search (all N searches simultaneously)
+            if use_ddg_images and images_per_chapter:
+                ddg_img_dir = str(Path(images_dir) / chapter_folder)
+                for idx in range(images_per_chapter):
+                    query = f"{outline.title} {outline.summary[:60]} educational children"
+                    parallel_tasks.append(search_and_download_image(
+                        query=query, output_dir=ddg_img_dir,
+                        language=request.language.lower()[:2],
+                        country=request.country, safesearch="moderate",
+                    ))
+                    task_labels.append(('ddg_image', idx))
+
+            # Video search (concurrent with images)
+            if enable_video_search:
+                video_queries = re.findall(r'\[VIDEO:\s*([^\]]+)\]', chapter.markdown_content)
+                if not video_queries:
+                    video_queries = [f"{outline.title} {request.language} educational"]
+                parallel_tasks.append(search_videos_for_chapter(
+                    chapter_title=chapter.chapter_title,
+                    video_queries=video_queries,
+                    topic=request.topic,
+                    language=request.language,
+                    country=request.country,
+                ))
+                task_labels.append(('videos', 0))
+
+            # ── Run images + videos in parallel ─────────────────────────────────────
+            if parallel_tasks:
+                n_imgs = sum(1 for t, _ in task_labels if t in ('image', 'ddg_image'))
+                n_vids = sum(1 for t, _ in task_labels if t == 'videos')
+                parts = []
+                if n_imgs:
+                    parts.append(f"{'🎨' if generate_images else '🔍'} {n_imgs} image(s)")
+                if n_vids:
+                    parts.append("🎬 video search")
+                progress_placeholder.info(
+                    f"⚡ Chapter {i+1}/{total} — parallel: {', '.join(parts)}..."
+                )
+                media_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+
+                for (rtype, ridx), result in zip(task_labels, media_results):
+                    if isinstance(result, Exception):
+                        print(f"⚠️ {rtype}[{ridx}] ch {i+1} failed: {result}")
+                        if rtype in ('image', 'ddg_image'):
+                            st.warning(f"⚠️ Image {ridx+1} for '{chapter.chapter_title}' failed: {result}")
+                        continue
+                    if rtype in ('image', 'ddg_image'):
+                        if result:
+                            chapter.generated_images.append(result)
+                            print(f"✅ {rtype.upper()} {ridx+1} ch {i+1}: {chapter.chapter_title}")
+                        else:
+                            st.warning(f"⚠️ {'Image' if rtype == 'image' else 'DDG image'} {ridx+1} for '{chapter.chapter_title}' not found.")
+                    elif rtype == 'videos' and result:
+                        chapter.videos = result
+                        _vid_label = _VIDEO_RECOMMENDED_LABELS.get(
+                            request.language, "Recommended video"
+                        )
+                        for v in result:
                             chapter.markdown_content += (
-                                f"\n\n---\n🎬 **Video recomendado:** [{v.title}]({v.url})\n\n"
+                                f"\n\n---\n🎬 **{_vid_label}:** [{v.title}]({v.url})\n\n"
                                 f"![QR Code]({v.qr_code})\n"
                             )
-                        print(f"✅ {len(videos)} video(s) found for chapter: {chapter.chapter_title}")
+                        print(f"✅ {len(result)} video(s) ch {i+1}: {chapter.chapter_title}")
 
-                # Embed generated images into [IMAGE:] placeholders with correct paths
-                # and style remaining [IMAGE:]/[VIDEO:] as callouts
-                chapter.markdown_content = _embed_images_in_markdown(
-                    chapter.markdown_content,
-                    chapter.generated_images if hasattr(chapter, 'generated_images') else []
+            # ── Embed images into markdown (needs media results, so after gather) ───
+            chapter.markdown_content = _embed_images_in_markdown(
+                chapter.markdown_content,
+                getattr(chapter, 'generated_images', []),
+            )
+
+            # ── Fire TTS as a background asyncio.Task ──────────────────────────────
+            # It runs concurrently while the next chapter's text is being generated.
+            if enable_tts:
+                tts_task = asyncio.create_task(_synthesize_tts(chapter, i))
+                pending_tts.append((i, chapter, tts_task))
+                progress_placeholder.info(
+                    f"📝 Chapter {i+1}/{total} done — 🔊 TTS running in background..."
                 )
 
-                # TTS narration (with voice clone fallback)
-                if enable_tts:
-                    progress_placeholder.info(
-                        f"📝 Chapter {i+1}/{len(curriculum.chapters)} - 🔊 Generating audio narration..."
-                    )
-                    chapter_narration: AudioNarration | None = None
+            full_chapters.append(chapter)
+            previous_summaries.append(f"{chapter.chapter_title}: {outline.summary[:120]}")
 
-                    # Try cloned voice first (if available)
-                    if voice_clone_profile and voice_clone_profile.get("voice"):
-                        progress_placeholder.info(
-                            f"📝 Chapter {i+1}/{len(curriculum.chapters)} - 🎤 Synthesizing cloned-voice audio..."
-                        )
-                        try:
-                            vc_path = narrate_chapter_vc(
-                                chapter_title=chapter.chapter_title,
-                                markdown_content=chapter.markdown_content,
-                                output_dir=audio_dir,
-                                voice=voice_clone_profile.get("voice"),
-                                model=voice_clone_profile.get("target_model", "qwen3-tts-vc-2026-01-22"),
-                                region=qwen_region,
-                            )
-                            if vc_path and os.path.exists(vc_path):
-                                chapter_narration = AudioNarration(
-                                    chapter_title=chapter.chapter_title,
-                                    file_path=str(vc_path),
-                                    duration_seconds=0.0,
-                                    voice_id=voice_clone_profile.get("voice", ""),
-                                    model=voice_clone_profile.get("target_model", "qwen3-tts-vc-2026-01-22"),
-                                    format=Path(vc_path).suffix.lstrip(".") or "wav",
-                                    size_bytes=os.path.getsize(vc_path),
-                                )
-                        except Exception as vc_err:
-                            print(f"⚠️ Voice clone synthesis failed: {vc_err}")
-
-                        if chapter_narration is None:
-                            print(
-                                f"⚠️ Cloned-voice synthesis failed for chapter {i+1}; "
-                                f"falling back to standard TTS..."
-                            )
-
-                    # Standard TTS fallback
-                    if chapter_narration is None:
-                        print(
-                            f"🔊 [FullBook TTS] Chapter {i+1}: '{chapter.chapter_title}' — "
-                            f"voice={tts_voice}, model={tts_model}, format={tts_audio_format}, "
-                            f"rate={tts_speech_rate}, md_len={len(chapter.markdown_content)}, "
-                            f"output_dir={audio_dir}"
-                        )
-                        narration = narrate_chapter(
-                            chapter_title=chapter.chapter_title,
-                            markdown_content=chapter.markdown_content,
-                            output_dir=audio_dir,
-                            voice=tts_voice,
-                            model=tts_model,
-                            audio_format=tts_audio_format,
-                            speech_rate=tts_speech_rate,
-                            language=request.language,
-                        )
-                        if narration:
-                            chapter_narration = narration
-
-                    if chapter_narration:
-                        chapter.audio_narration = chapter_narration
-                        print(
-                            f"🔊 ✅ Narration OK: {chapter_narration.file_path} "
-                            f"({chapter_narration.size_bytes} bytes, ~{chapter_narration.duration_seconds:.0f}s)"
-                        )
-                    else:
-                        print(
-                            f"⚠️ ❌ TTS FAILED for chapter: {chapter.chapter_title}. "
-                            f"narrate_chapter returned None — check DashScope logs above."
-                        )
-
-                full_chapters.append(chapter)
-            else:
-                st.warning(f"⚠️ Failed to generate chapter: {outline.title}")
+        # ── Collect all background TTS tasks ──────────────────────────────────────
+        if pending_tts:
+            remaining = [task for _, _, task in pending_tts if not task.done()]
+            if remaining:
+                progress_placeholder.info(f"⏳ Waiting for {len(remaining)} audio narration(s) to finish...")
+                await asyncio.gather(*remaining, return_exceptions=True)
+            for ch_idx, chapter, tts_task in pending_tts:
+                try:
+                    narration = tts_task.result()
+                    if narration:
+                        chapter.audio_narration = narration
+                except Exception as tts_err:
+                    print(f"⚠️ TTS result error ch {ch_idx+1}: {tts_err}")
 
         progress_placeholder.empty()
-        
+
         if not full_chapters:
             raise ValueError("No chapters were successfully generated")
 
         return curriculum, full_chapters
-        
+
     except Exception as e:
         import traceback
         error_msg = f"❌ Error during generation: {str(e)}"
@@ -1715,7 +2015,160 @@ async def generate_audio_book_only_async(
         full_chapters = []
         previous_summaries: list[str] = []
         progress_placeholder = st.empty()
+        pending_audio_tts: list[tuple[int, object, object]] = []  # (ch_idx, chapter, task)
 
+        # ── Inner coroutine: script generation + TTS for one chapter ──────────
+        async def _audio_script_and_tts(ch_obj, ch_idx: int):
+            """Generate audio script then synthesize TTS — runs as a background task."""
+            scr = await generate_audio_script(
+                chapter=ch_obj,
+                book_title=curriculum.title,
+                chapter_index=ch_idx,
+                language=request.language,
+                target_age=request.target_audience_age,
+                use_qwen=use_qwen_models,
+                model_id=text_model,
+                curriculum=curriculum,
+                total_chapters=len(curriculum.chapters),
+            )
+            _audio_logger.info(
+                f"  [Ch {ch_idx+1}] Audio script: "
+                f"{'OK (' + str(len(scr)) + ' chars)' if scr else 'NONE/FAILED'}"
+            )
+            tts_in = prepare_script_for_tts(scr if scr else ch_obj.markdown_content)
+            _audio_logger.info(f"  [Ch {ch_idx+1}] TTS input: {len(tts_in)} chars")
+
+            narration_result: AudioNarration | None = None
+            _using_clone = bool(voice_clone_profile and voice_clone_profile.get("voice"))
+
+            if _using_clone:
+                vc_voice = voice_clone_profile.get("voice")
+                vc_model = voice_clone_profile.get("target_model", "qwen3-tts-vc-realtime-2025-11-27")
+                vc_name  = voice_clone_profile.get("name", "custom_voice")
+
+                vc_p = await asyncio.to_thread(
+                    narrate_chapter_vc,
+                    chapter_title=ch_obj.chapter_title,
+                    markdown_content=tts_in,
+                    output_dir=audio_dir,
+                    voice=vc_voice,
+                    model=vc_model,
+                    region=qwen_region,
+                )
+                if vc_p and os.path.exists(vc_p):
+                    narration_result = AudioNarration(
+                        chapter_title=ch_obj.chapter_title,
+                        file_path=str(vc_p),
+                        duration_seconds=0.0,
+                        voice_id=vc_voice,
+                        model=vc_model,
+                        format=Path(vc_p).suffix.lstrip(".") or "wav",
+                        size_bytes=os.path.getsize(vc_p),
+                    )
+                else:
+                    # ── VC synthesis failed — try re-enrollment from saved sample ──
+                    _audio_logger.error(
+                        f"  [Ch {ch_idx+1}] ❌ Cloned-voice synthesis failed for '{vc_name}' "
+                        f"(voice={vc_voice[:40]}...). "
+                        f"Attempting auto-re-enrollment from saved sample."
+                    )
+                    sample_path = voice_clone_profile.get("sample_path")
+                    _reenrolled = False
+                    if sample_path and Path(sample_path).exists():
+                        try:
+                            api_safe = re.sub(r'[^a-z0-9]', '', vc_name.lower())[:20] or "myvoice"
+                            _audio_logger.info(
+                                f"  [Ch {ch_idx+1}] 🔄 Re-enrolling '{vc_name}' "
+                                f"from {sample_path} (model={vc_model})"
+                            )
+                            new_voice = await asyncio.to_thread(
+                                create_cloned_voice,
+                                sample_path,
+                                target_model=vc_model,
+                                preferred_name=api_safe,
+                                region=qwen_region,
+                            )
+                            if new_voice:
+                                # Persist the fresh enrollment in the registry
+                                voice_clone_profile["voice"] = new_voice
+                                voice_clone_profile["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                                st.session_state.voice_clone_profile = voice_clone_profile
+                                _fresh_reg = _load_voice_registry()
+                                _fresh_reg[vc_name] = voice_clone_profile
+                                _save_voice_registry(_fresh_reg)
+                                _audio_logger.info(
+                                    f"  [Ch {ch_idx+1}] ✅ Re-enrolled: {new_voice[:40]}... — retrying TTS"
+                                )
+                                # Retry synthesis with renewed voice
+                                vc_p2 = await asyncio.to_thread(
+                                    narrate_chapter_vc,
+                                    chapter_title=ch_obj.chapter_title,
+                                    markdown_content=tts_in,
+                                    output_dir=audio_dir,
+                                    voice=new_voice,
+                                    model=vc_model,
+                                    region=qwen_region,
+                                )
+                                if vc_p2 and os.path.exists(vc_p2):
+                                    narration_result = AudioNarration(
+                                        chapter_title=ch_obj.chapter_title,
+                                        file_path=str(vc_p2),
+                                        duration_seconds=0.0,
+                                        voice_id=new_voice,
+                                        model=vc_model,
+                                        format=Path(vc_p2).suffix.lstrip(".") or "wav",
+                                        size_bytes=os.path.getsize(vc_p2),
+                                    )
+                                    _reenrolled = True
+                                else:
+                                    _audio_logger.error(
+                                        f"  [Ch {ch_idx+1}] ❌ Re-enrolled TTS also failed. "
+                                        f"Chapter will not have audio."
+                                    )
+                            else:
+                                _audio_logger.error(
+                                    f"  [Ch {ch_idx+1}] ❌ Re-enrollment returned no voice. "
+                                    f"Check DASHSCOPE_API_KEY and try re-cloning in Voice Cloning section."
+                                )
+                        except Exception as _reenroll_err:
+                            _audio_logger.error(
+                                f"  [Ch {ch_idx+1}] ❌ Re-enrollment exception: {_reenroll_err}"
+                            )
+                    else:
+                        _audio_logger.error(
+                            f"  [Ch {ch_idx+1}] ❌ No sample file found for re-enrollment "
+                            f"(sample_path={sample_path!r}). "
+                            f"Please re-clone the voice in the 🎤 Voice Cloning section."
+                        )
+
+            # Only use preset-voice TTS when no clone profile was active for this run
+            if narration_result is None and not _using_clone:
+                _audio_logger.info(
+                    f"  [Ch {ch_idx+1}] Calling narrate_chapter: voice={tts_voice}, "
+                    f"model={tts_model}, format={tts_audio_format}, rate={tts_speech_rate}"
+                )
+                narr = await asyncio.to_thread(
+                    narrate_chapter,
+                    chapter_title=ch_obj.chapter_title,
+                    markdown_content=tts_in,
+                    output_dir=audio_dir,
+                    voice=tts_voice,
+                    model=tts_model,
+                    audio_format=tts_audio_format,
+                    speech_rate=tts_speech_rate,
+                    language=request.language,
+                )
+                if narr:
+                    narration_result = narr
+                    _audio_logger.info(
+                        f"  [Ch {ch_idx+1}] ✅ Narration OK: {narr.file_path} "
+                        f"({narr.size_bytes} bytes, ~{narr.duration_seconds:.0f}s)"
+                    )
+                else:
+                    _audio_logger.error(f"  [Ch {ch_idx+1}] ❌ TTS synthesis failed")
+            return narration_result
+
+        # ── Sequential chapter text generation + background TTS ────────────────
         for i, outline in enumerate(curriculum.chapters):
             progress_placeholder.info(f"🎙️ Generating voice chapter {i+1}/{len(curriculum.chapters)}...")
             chapter = await generate_voice_chapter(
@@ -1727,90 +2180,32 @@ async def generate_audio_book_only_async(
             if not chapter:
                 continue
 
-            # Track chapter summaries for narrative continuity
             previous_summaries.append(
                 f"{chapter.chapter_title}: {outline.summary[:120]}"
             )
-
-            script = await generate_audio_script(
-                chapter=chapter,
-                book_title=curriculum.title,
-                chapter_index=i,
-                language=request.language,
-                target_age=request.target_audience_age,
-                use_qwen=use_qwen_models,
-                model_id=text_model,
-                curriculum=curriculum,
-                total_chapters=len(curriculum.chapters),
-            )
-            _audio_logger.info(
-                f"  [Ch {i+1}] Audio script result: "
-                f"{'OK (' + str(len(script)) + ' chars)' if script else 'NONE/FAILED'}"
-            )
-            tts_input = prepare_script_for_tts(script if script else chapter.markdown_content)
-            _audio_logger.info(
-                f"  [Ch {i+1}] TTS input prepared: {len(tts_input)} chars, "
-                f"preview: {tts_input[:120]}..."
-            )
-            chapter_narration: AudioNarration | None = None
-
-            if voice_clone_profile and voice_clone_profile.get("voice"):
-                progress_placeholder.info(f"🎤 Synthesizing cloned-voice audio {i+1}/{len(curriculum.chapters)}...")
-                vc_path = narrate_chapter_vc(
-                    chapter_title=chapter.chapter_title,
-                    markdown_content=tts_input,
-                    output_dir=audio_dir,
-                    voice=voice_clone_profile.get("voice"),
-                    model=voice_clone_profile.get("target_model", "qwen3-tts-vc-2026-01-22"),
-                    region=qwen_region,
-                )
-                if vc_path and os.path.exists(vc_path):
-                    chapter_narration = AudioNarration(
-                        chapter_title=chapter.chapter_title,
-                        file_path=str(vc_path),
-                        duration_seconds=0.0,
-                        voice_id=voice_clone_profile.get("voice", ""),
-                        model=voice_clone_profile.get("target_model", "qwen3-tts-vc-2026-01-22"),
-                        format=Path(vc_path).suffix.lstrip(".") or "mp3",
-                        size_bytes=os.path.getsize(vc_path),
-                    )
-                else:
-                    progress_placeholder.warning(
-                        f"⚠️ Cloned-voice synthesis failed for chapter {i+1}; falling back to standard TTS..."
-                    )
-
-            if chapter_narration is None:
-                progress_placeholder.info(f"🔊 Synthesizing chapter audio {i+1}/{len(curriculum.chapters)}...")
-                _audio_logger.info(
-                    f"  [Ch {i+1}] Calling narrate_chapter: voice={tts_voice}, "
-                    f"model={tts_model}, format={tts_audio_format}, "
-                    f"rate={tts_speech_rate}, dir={audio_dir}"
-                )
-                narration = narrate_chapter(
-                    chapter_title=chapter.chapter_title,
-                    markdown_content=tts_input,
-                    output_dir=audio_dir,
-                    voice=tts_voice,
-                    model=tts_model,
-                    audio_format=tts_audio_format,
-                    speech_rate=tts_speech_rate,
-                    language=request.language,
-                )
-                if narration:
-                    chapter_narration = narration
-                    _audio_logger.info(
-                        f"  [Ch {i+1}] ✅ Narration OK: {narration.file_path} "
-                        f"({narration.size_bytes} bytes, ~{narration.duration_seconds:.0f}s)"
-                    )
-                else:
-                    _audio_logger.error(
-                        f"  [Ch {i+1}] ❌ narrate_chapter returned None! "
-                        f"TTS synthesis failed for '{chapter.chapter_title}'"
-                    )
-
-            chapter.audio_narration = chapter_narration
-
             full_chapters.append(chapter)
+
+            # ── Fire TTS as background task while next chapter text generates ──
+            tts_task = asyncio.create_task(_audio_script_and_tts(chapter, i))
+            pending_audio_tts.append((i, chapter, tts_task))
+            progress_placeholder.info(
+                f"📝 Voice chapter {i+1}/{len(curriculum.chapters)} done — "
+                f"🔊 script+TTS running in background..."
+            )
+
+        # ── Collect all background TTS tasks ──────────────────────────────────
+        if pending_audio_tts:
+            remaining = [t for _, _, t in pending_audio_tts if not t.done()]
+            if remaining:
+                progress_placeholder.info(f"⏳ Waiting for {len(remaining)} audio narration(s) to finish...")
+                await asyncio.gather(*remaining, return_exceptions=True)
+            for ch_idx, chapter, tts_task in pending_audio_tts:
+                try:
+                    narration_result = tts_task.result()
+                    if narration_result:
+                        chapter.audio_narration = narration_result
+                except Exception as _tts_err:
+                    _audio_logger.error(f"  [Ch {ch_idx+1}] TTS task error: {_tts_err}")
 
         progress_placeholder.empty()
         if not full_chapters:
@@ -1857,9 +2252,9 @@ if run_full_generation:
     runtime = _resolve_runtime_options(
         parsed_chat_data,
         {
-            "generate_images": generate_images,
-            "use_ddg_images": use_ddg_images,
-            "images_per_chapter": images_per_chapter,
+            "generate_images": _form_ai_images,
+            "use_ddg_images": _form_ddg_images,
+            "images_per_chapter": int(_form_images_per_chapter) if _form_enable_images else 0,
             "use_qwen_models": use_qwen_models,
             "qwen_text_model": qwen_text_model,
             "enable_tts": enable_tts,
@@ -1871,6 +2266,10 @@ if run_full_generation:
             "palette_id": palette_id,
         },
     )
+
+    # Apply form-tab image model / style selections
+    qwen_image_model = _form_qwen_image_model
+    art_style = _form_art_style
 
     if not _validate_generation_prereqs(
         use_qwen_models=runtime["use_qwen_models"],
@@ -1922,68 +2321,90 @@ if run_full_generation:
             )
             _progress_ph.empty()
 
-            # ── Image generation for genre books (same logic as educational) ──
+            # ── Image generation for genre books — all chapters in parallel ──
             if full_chapters and (runtime["generate_images"] or runtime["use_ddg_images"]):
                 _imgs_per_ch = runtime["images_per_chapter"]
                 _img_ph = st.empty()
-                for _i, _ch in enumerate(full_chapters):
-                    if not _imgs_per_ch:
-                        break
-                    _ch_folder = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in _ch.chapter_title)
-                    _ch_folder = _ch_folder.replace(' ', '_')[:50]
-                    _ch.generated_images = []
-                    _placeholder_descs = _ch.image_placeholders if hasattr(_ch, 'image_placeholders') else []
-                    # Extract [IMAGE: ...] descriptions from markdown if not yet set
-                    if not _placeholder_descs:
-                        import re as _re
-                        _placeholder_descs = _re.findall(r'\[IMAGE:\s*([^\]]+)\]', _ch.markdown_content or '')
-                        _ch.image_placeholders = _placeholder_descs
+                _img_ph.info(
+                    f"⚡ Generating images for all {len(full_chapters)} genre chapters in parallel..."
+                )
+
+                async def _genre_images_async():
+                    import re as _re2
+                    # Pre-compute per-chapter metadata
+                    ch_meta = []
+                    for _i, _ch in enumerate(full_chapters):
+                        _ch_folder = "".join(
+                            c if c.isalnum() or c in (' ', '_', '-') else '_'
+                            for c in _ch.chapter_title
+                        ).replace(' ', '_')[:50]
+                        _ch.generated_images = []
+                        _descs = _ch.image_placeholders if hasattr(_ch, 'image_placeholders') else []
+                        if not _descs:
+                            _descs = _re2.findall(r'\[IMAGE:\s*([^\]]+)\]', _ch.markdown_content or '')
+                            _ch.image_placeholders = _descs
+                        ch_meta.append((_i, _ch, _ch_folder, _descs))
 
                     if runtime["generate_images"]:
-                        _img_ph.info(f"🎨 Generating images for chapter {_i+1}/{len(full_chapters)}: {_ch.chapter_title[:40]}...")
-                        for _idx in range(_imgs_per_ch):
-                            _img_title = _placeholder_descs[_idx] if _idx < len(_placeholder_descs) else f"{_ch.chapter_title} illustration {_idx+1}"
-                            _img = generate_chapter_image(
-                                title=_img_title,
-                                summary=_img_title,
-                                output_dir=str(images_dir_path),
-                                chapter_name=_ch_folder,
-                                language=request.language,
-                                country=request.country,
-                                audience_age=request.target_audience_age,
-                                use_qwen_text=runtime["use_qwen_models"],
-                                text_model=runtime["qwen_text_model"],
-                                image_model=qwen_image_model,
-                                art_style=art_style,
-                            )
-                            if _img:
-                                _ch.generated_images.append(_img)
-                                print(f"✅ Image {_idx+1} generated for genre chapter: {_ch.chapter_title}")
+                        _tasks, _task_meta = [], []
+                        for _i, _ch, _ch_folder, _descs in ch_meta:
+                            for _idx in range(_imgs_per_ch or 0):
+                                _title = _descs[_idx] if _idx < len(_descs) else f"{_ch.chapter_title} illustration {_idx+1}"
+                                _tasks.append(asyncio.to_thread(
+                                    generate_chapter_image,
+                                    title=_title,
+                                    summary=_title,
+                                    output_dir=str(images_dir_path),
+                                    chapter_name=_ch_folder,
+                                    language=request.language,
+                                    country=request.country,
+                                    audience_age=request.target_audience_age,
+                                    use_qwen_text=runtime["use_qwen_models"],
+                                    text_model=runtime["qwen_text_model"],
+                                    image_model=qwen_image_model,
+                                    art_style=art_style,
+                                ))
+                                _task_meta.append((_i, _idx))
+                        _results = await asyncio.gather(*_tasks, return_exceptions=True)
+                        for (_ri, _ridx), _res in zip(_task_meta, _results):
+                            _ch = full_chapters[_ri]
+                            if isinstance(_res, Exception):
+                                print(f"⚠️ Image {_ridx+1} ch {_ri+1} failed: {_res}")
+                            elif _res:
+                                _ch.generated_images.append(_res)
+                                print(f"✅ Image {_ridx+1} ch {_ri+1}: {_ch.chapter_title}")
                             else:
-                                print(f"⚠️ Failed to generate image {_idx+1} for genre chapter: {_ch.chapter_title}")
-                                st.warning(f"⚠️ Image {_idx+1} for '{_ch.chapter_title}' could not be generated. Check DASHSCOPE_API_KEY and image quota.")
+                                print(f"⚠️ No image {_ridx+1} for genre ch {_ri+1}")
 
                     elif runtime["use_ddg_images"]:
-                        _img_ph.info(f"🔍 Searching images for chapter {_i+1}/{len(full_chapters)}: {_ch.chapter_title[:40]}...")
-                        _ddg_dir = str(images_dir_path / _ch_folder)
-                        for _idx in range(_imgs_per_ch):
-                            _query = _placeholder_descs[_idx] if _idx < len(_placeholder_descs) else f"{_ch.chapter_title} illustration"
-                            _ddg_img = asyncio.run(search_and_download_image(
-                                query=_query,
-                                output_dir=_ddg_dir,
-                                language=request.language.lower()[:2],
-                                country=request.country,
-                                safesearch="moderate",
-                            ))
-                            if _ddg_img:
-                                _ch.generated_images.append(_ddg_img)
-                            else:
-                                st.warning(f"⚠️ No DDG image found for '{_ch.chapter_title}' — chapter will render without image.")
+                        _tasks, _task_meta = [], []
+                        for _i, _ch, _ch_folder, _descs in ch_meta:
+                            _ddg_dir = str(images_dir_path / _ch_folder)
+                            for _idx in range(_imgs_per_ch or 0):
+                                _query = _descs[_idx] if _idx < len(_descs) else f"{_ch.chapter_title} illustration"
+                                _tasks.append(search_and_download_image(
+                                    query=_query,
+                                    output_dir=_ddg_dir,
+                                    language=request.language.lower()[:2],
+                                    country=request.country,
+                                    safesearch="moderate",
+                                ))
+                                _task_meta.append((_i, _idx))
+                        _results = await asyncio.gather(*_tasks, return_exceptions=True)
+                        for (_ri, _ridx), _res in zip(_task_meta, _results):
+                            _ch = full_chapters[_ri]
+                            if isinstance(_res, Exception):
+                                print(f"⚠️ DDG image {_ridx+1} ch {_ri+1} failed: {_res}")
+                            elif _res:
+                                _ch.generated_images.append(_res)
 
-                    _ch.markdown_content = _embed_images_in_markdown(
-                        _ch.markdown_content,
-                        _ch.generated_images,
-                    )
+                    # Embed collected images into markdown for each chapter
+                    for _, _ch, _, _ in ch_meta:
+                        _ch.markdown_content = _embed_images_in_markdown(
+                            _ch.markdown_content, _ch.generated_images
+                        )
+
+                asyncio.run(_genre_images_async())
                 _img_ph.empty()
         else:
             curriculum, full_chapters = asyncio.run(
@@ -2040,58 +2461,75 @@ if run_full_generation:
             print(f"   {html_dir}/")
             print(f"   {md_dir}/")
             print(f"   {pdf_dir}/")
-            
-            # Save JSON
+
+            # Save JSON (fast — do first so it's always available)
             json_path = json_dir / f"book_output.json"
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, ensure_ascii=False, indent=2)
             print(f"✅ JSON saved: {json_path}")
 
-            # Resolve template_id — chat may override, "auto" triggers auto-pick
+            # Resolve template / palette
             effective_template_id = runtime.get("template_id", template_id)
             if effective_template_id == "auto":
                 effective_template_id = auto_pick_template(request.topic)
                 print(f"🤖 Auto-picked template: {effective_template_id} (topic: {request.topic})")
-
-            # Resolve palette_id — explicit user choice or auto
             effective_palette_id = runtime.get("palette_id", palette_id)
 
-            # Generate HTML
-            html_path = html_dir / f"libro_interactivo.html"
-            generate_html_css_book_from_json(
-                request, curriculum, full_chapters, str(html_path),
-                template_id=effective_template_id,
-                palette_id=effective_palette_id,
-            )
-            print(f"✅ HTML saved: {html_path} (template: {effective_template_id}, palette: {effective_palette_id})")
+            html_path = html_dir / "libro_interactivo.html"
+            md_path   = md_dir   / "libro_interactivo.md"
+            pdf_path  = pdf_dir  / "libro_interactivo.pdf"
 
-            # Generate Markdown
-            md_path = md_dir / f"libro_interactivo.md"
-            book_output = BookOutput(
+            book_output_obj = BookOutput(
                 book_request=request,
                 curriculum=curriculum,
-                chapters=full_chapters
+                chapters=full_chapters,
             )
-            save_markdown_book(book_output, str(md_path))
-            print(f"✅ Markdown saved: {md_path}")
 
-            # Generate PDF directly from structured data (fpdf2, no native deps)
-            pdf_path = pdf_dir / f"libro_interactivo.pdf"
-            try:
-                pdf_success = generate_pdf_from_data(
-                    request, curriculum, full_chapters,
-                    str(pdf_path),
-                    images_base=images_dir_path,
+            # ── Write HTML + Markdown + PDF in parallel (all independent) ──────────
+            import concurrent.futures as _cf
+
+            def _write_html():
+                generate_html_css_book_from_json(
+                    request, curriculum, full_chapters, str(html_path),
+                    template_id=effective_template_id,
+                    palette_id=effective_palette_id,
                 )
-                if pdf_success:
-                    print(f"✅ PDF saved: {pdf_path}")
-                    st.success(f"📄 PDF generated successfully!")
-                else:
-                    print(f"⚠️ PDF generation failed")
-                    st.info(f"📱 PDF generation failed, but HTML is ready to open or print to PDF from browser")
-            except Exception as e:
-                print(f"⚠️  Error generating PDF: {e}")
-                pdf_success = False
+                print(f"✅ HTML saved: {html_path} (template: {effective_template_id}, palette: {effective_palette_id})")
+                return True
+
+            def _write_md():
+                save_markdown_book(book_output_obj, str(md_path))
+                print(f"✅ Markdown saved: {md_path}")
+                return True
+
+            def _write_pdf():
+                try:
+                    ok = generate_pdf_from_data(
+                        request, curriculum, full_chapters,
+                        str(pdf_path),
+                        images_base=images_dir_path,
+                    )
+                    if ok:
+                        print(f"✅ PDF saved: {pdf_path}")
+                    else:
+                        print(f"⚠️ PDF generation failed")
+                    return ok
+                except Exception as _pdf_err:
+                    print(f"⚠️ PDF error: {_pdf_err}")
+                    return False
+
+            with _cf.ThreadPoolExecutor(max_workers=3) as _pool:
+                _f_html = _pool.submit(_write_html)
+                _f_md   = _pool.submit(_write_md)
+                _f_pdf  = _pool.submit(_write_pdf)
+                html_ok, md_ok, pdf_success = (
+                    _f_html.result(), _f_md.result(), _f_pdf.result()
+                )
+
+            if pdf_success:
+                st.success(f"📄 PDF generated successfully!")
+            else:
+                st.info(f"📱 PDF generation failed — HTML is ready to open or print to PDF from browser")
 
             # Save generation metrics
             st.session_state.gen_time = time.perf_counter() - _gen_t0
@@ -2362,21 +2800,17 @@ if st.session_state.book_generated and st.session_state.curriculum:
             "—",
             help="Model not found in pricing table; update _COST_PER_1M_OUTPUT in app.py.",
         )
-    elif _est_cost == 0.0:
-        _m3.metric(
-            "💰 Est. Cost",
-            "Free",
-            help=f"Model '{_disp_model}' billed at $0 (free tier).",
-        )
     else:
         _cost_str = f"${_est_cost:.4f}" if _est_cost < 0.01 else f"${_est_cost:.3f}"
+        _rate = _COST_PER_1M_OUTPUT.get(_disp_model or "", 0)
         _m3.metric(
             "💰 Est. Cost",
             _cost_str,
             help=(
                 f"Model: {_disp_model}\n"
-                f"Rate: ${_COST_PER_1M_OUTPUT.get(_disp_model, 0):.2f} / 1M output tokens\n"
-                "Input tokens not factored in (output-only estimate)."
+                f"Rate: ${_rate:.4f} / 1M output tokens\n"
+                "Input tokens not included (output-only estimate).\n"
+                "Commercial list price shown regardless of free-tier quota."
             ),
         )
 
@@ -2572,7 +3006,7 @@ if st.session_state.book_generated and st.session_state.curriculum:
             if hasattr(ch, 'generated_images') and ch.generated_images:
                 for j, img in enumerate(ch.generated_images, 1):
                     st.caption(img.description)
-                    st.image(img.url, use_container_width=True)
+                    st.image(img.url, width='stretch')
 
             # Videos with QR codes
             if hasattr(ch, 'videos') and ch.videos:

@@ -636,21 +636,37 @@ def narrate_chapter_vc(
     chunks = _split_text(narration_text, MAX_CHARS) if len(narration_text) > MAX_CHARS else [narration_text]
 
     all_audio: list[bytes] = []
+    last_error: str = ""
     for i, chunk in enumerate(chunks, 1):
         logger.info(f"🔊 [VC] Synthesizing chunk {i}/{len(chunks)} ({len(chunk)} chars)...")
         try:
             audio_bytes = synthesize(chunk, voice, model=model, region=region)
             if audio_bytes:
                 all_audio.append(audio_bytes)
+                last_error = ""  # reset on success
             else:
+                last_error = "synthesize() returned empty bytes"
                 logger.warning(f"⚠️ Chunk {i} returned no audio")
         except Exception as exc:
-            logger.warning(f"⚠️ Chunk {i} synthesis failed: {exc}")
+            last_error = str(exc)
+            logger.error(f"❌ [VC] Chunk {i}/{len(chunks)} synthesis error: {exc}")
         # Small delay between chunks to avoid overwhelming the server
         if i < len(chunks):
             _time.sleep(1.5)
 
     if not all_audio:
+        hint = ""
+        _low = last_error.lower()
+        if any(k in _low for k in ("not found", "invalid voice", "voice expired", "no such voice")):
+            hint = " The enrolled voice may have expired — re-clone in the Voice Cloning section."
+        elif "quota" in _low or "rate limit" in _low or "limit exceeded" in _low:
+            hint = " DashScope quota or rate-limit reached — wait and retry."
+        elif "auth" in _low or "api key" in _low or "unauthorized" in _low:
+            hint = " Check your DASHSCOPE_API_KEY."
+        logger.error(
+            f"❌ [VC] All {len(chunks)} chunk(s) failed for '{chapter_title}'. "
+            f"Last error: {last_error or 'unknown'}.{hint}"
+        )
         return None
 
     # Properly concatenate WAV files by extracting PCM data

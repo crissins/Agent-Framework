@@ -145,7 +145,8 @@ async def generate_curriculum(agent: ChatAgent, request: BookRequest, max_tokens
         
         return response.value
     except Exception as e:
+        import traceback as _tb
         logger.error(f"❌ Error generating curriculum: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return None
+        logger.error(_tb.format_exc())
+        # Re-raise so callers (e.g. batch jobs) can surface the real failure reason
+        raise

@@ -30,7 +30,8 @@ async def create_voice_chapter_agent(
         chat_client=client,
         name="VoiceChapterAgent",
         instructions=(
-            "You write educational chapter markdown that will be converted into AUDIO narration.\n"
+            "You write educational chapter content that will be converted into AUDIO narration.\n"
+            "Return a JSON object matching the ChapterContent schema.\n"
             "Prioritize clear spoken flow, short paragraphs, and natural transitions.\n"
             "Still include educational structure sections (concept, example, activity, reflection).\n"
             "Avoid dense tables, code blocks, or overly visual dependencies.\n"
@@ -47,6 +48,7 @@ async def create_voice_chapter_agent(
             "- End the chapter with a brief recap and a warm transition to the next topic.\n"
             "- When the chapter is part of a larger book, reference earlier concepts naturally\n"
             "  (e.g. 'Como vimos en el capítulo anterior...').\n"
+            "Always respond with valid JSON."
         ),
     )
 

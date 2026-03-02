@@ -13,6 +13,78 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# ── Language-specific section names ─────────────────────────────────────────
+# Used in prompts so the LLM generates headings in the target language.
+_SECTION_NAMES: Dict[str, Dict[str, str]] = {
+    "Spanish": {
+        "key_concept":  "Concepto Clave",
+        "life_example": "Ejemplo en tu Vida",
+        "think":        "Pregunta para Pensar",
+        "family":       "Actividad en Familia",
+        "school":       "Actividad en la Escuela",
+        "ai_question":  "Pregunta para una IA",
+        "did_you_know": "Sabías que…",
+        "challenge":    "Desafío Creativo",
+        "world":        "Conexión con el Mundo",
+        "experiment":   "Mini Experimento",
+        "debate":       "Debate en Clase",
+        "inventor":     "Rincón del Inventor",
+        "short_story":  "Historia Corta",
+    },
+    "English": {
+        "key_concept":  "Key Concept",
+        "life_example": "Example in Your Life",
+        "think":        "Think About It",
+        "family":       "Family Activity",
+        "school":       "School Activity",
+        "ai_question":  "Ask an AI",
+        "did_you_know": "Did You Know…",
+        "challenge":    "Creative Challenge",
+        "world":        "Connection to the World",
+        "experiment":   "Mini Experiment",
+        "debate":       "Class Debate",
+        "inventor":     "Inventor's Corner",
+        "short_story":  "Short Story",
+    },
+    "Portuguese": {
+        "key_concept":  "Conceito-Chave",
+        "life_example": "Exemplo na Sua Vida",
+        "think":        "Pergunta para Pensar",
+        "family":       "Atividade em Família",
+        "school":       "Atividade na Escola",
+        "ai_question":  "Pergunta para uma IA",
+        "did_you_know": "Você Sabia…",
+        "challenge":    "Desafio Criativo",
+        "world":        "Conexão com o Mundo",
+        "experiment":   "Mini Experimento",
+        "debate":       "Debate em Classe",
+        "inventor":     "Canto do Inventor",
+        "short_story":  "História Curta",
+    },
+    "French": {
+        "key_concept":  "Concept Clé",
+        "life_example": "Exemple dans Ta Vie",
+        "think":        "Question de Réflexion",
+        "family":       "Activité en Famille",
+        "school":       "Activité en Classe",
+        "ai_question":  "Demande à une IA",
+        "did_you_know": "Le Savais-tu…",
+        "challenge":    "Défi Créatif",
+        "world":        "Connexion au Monde",
+        "experiment":   "Mini Expérience",
+        "debate":       "Débat en Classe",
+        "inventor":     "Coin de l'Inventeur",
+        "short_story":  "Courte Histoire",
+    },
+}
+_DEFAULT_SECTION_NAMES = _SECTION_NAMES["English"]
+
+
+def _get_section_names(language: str) -> Dict[str, str]:
+    """Return section-name strings for the given language (falls back to English)."""
+    return _SECTION_NAMES.get(language, _DEFAULT_SECTION_NAMES)
+
+
 _MATH_KEYWORDS = [
     "matemáticas", "matematicas", "math", "álgebra", "algebra",
     "geometría", "geometria", "geometry", "fraccion", "fracciones",
@@ -66,26 +138,28 @@ async def create_chapter_agent(
         name="ChapterAgent",
         instructions=(
             "You are an expert in creating interactive, engaging educational content for children in LATAM. "
-            "IMPORTANT: You MUST respond ONLY in the language specified by the user.\n\n"
+            "CRITICAL RULE #1: You MUST write ENTIRELY in the language specified by the user. "
+            "ALL headings, section names, paragraphs, questions, and instructions MUST be in that language. "
+            "Do NOT mix languages — every single word must be in the specified language.\n\n"
             "Write chapters that are age-appropriate, culturally relevant, and follow the specified learning method.\n\n"
             "CHAPTER STRUCTURE — IMPORTANT: vary the structure between chapters!\n"
             "Every chapter MUST include the REQUIRED sections, but OPTIONAL sections should rotate\n"
             "so that each chapter feels fresh and different.\n\n"
-            "REQUIRED SECTIONS (always include all of these):\n"
-            "  • **Concepto Clave** — Clear, simple explanation of the main topic\n"
-            "  • **Ejemplo en tu Vida** — How the topic applies to the student's daily life\n"
-            "  • **Pregunta para Pensar** — An open-ended reflection question\n\n"
-            "OPTIONAL SECTIONS (pick 2-3 per chapter, vary your choices):\n"
-            "  • **Actividad en Familia** — An offline family activity (no technology needed)\n"
-            "  • **Actividad en la Escuela** — A classroom group activity\n"
-            "  • **Pregunta para una IA** — 1-2 suggested questions for AI assistants\n"
-            "  • **Sabías que…** — A fun, surprising fact related to the topic\n"
-            "  • **Desafío Creativo** — A creative challenge (drawing, writing, building)\n"
-            "  • **Conexión con el Mundo** — How the topic connects to global issues\n"
-            "  • **Mini Experimento** — A simple hands-on experiment or observation\n"
-            "  • **Debate en Clase** — A discussion topic with two sides to argue\n"
-            "  • **Rincón del Inventor** — Invent or design something related to the topic\n"
-            "  • **Historia Corta** — A very short story illustrating the concept\n\n"
+            "REQUIRED SECTIONS (always include all three — use the EXACT translated name for the target language):\n"
+            "  • Key Concept (e.g. 'Concepto Clave' in Spanish, 'Key Concept' in English, 'Conceito-Chave' in Portuguese)\n"
+            "  • Daily Life Example (e.g. 'Ejemplo en tu Vida' in Spanish, 'Example in Your Life' in English)\n"
+            "  • Reflection Question (e.g. 'Pregunta para Pensar' in Spanish, 'Think About It' in English)\n\n"
+            "OPTIONAL SECTIONS (pick 2-3 per chapter, vary your choices — translate names to target language):\n"
+            "  • Family Activity\n"
+            "  • School Activity\n"
+            "  • Ask an AI\n"
+            "  • Did You Know…\n"
+            "  • Creative Challenge\n"
+            "  • Connection to the World\n"
+            "  • Mini Experiment\n"
+            "  • Class Debate\n"
+            "  • Inventor's Corner\n"
+            "  • Short Story\n\n"
             "FORMATTING GUIDELINES:\n"
             "- Use Markdown with ## headers, **bold**, and lists\n"
             "- Include [IMAGE: description] placeholders where visuals help\n"
@@ -93,7 +167,7 @@ async def create_chapter_agent(
             "- Use LaTeX for formulas: $$formula$$\n"
             "- Keep language simple and engaging for the target age\n"
             "- Respect local culture and values\n"
-            "- ALL output MUST be in the specified language\n"
+            "- ALL output MUST be 100% in the specified language — no English words in Spanish chapters, etc.\n"
             "- Do NOT repeat the same optional section combination in every chapter"
         ),
     )
@@ -143,6 +217,10 @@ async def generate_chapter(
     else:
         image_instruction = "5. Do NOT add any [IMAGE: ...] placeholders.\n"
 
+    # ── Language-specific section names ────────────────────────────────────
+    lang = context.get('language', 'Spanish')
+    sn = _get_section_names(lang)
+
     prompt = (
         f"=== CHAPTER WRITING REQUEST ===\n\n"
         f"### CHAPTER INFO ###\n"
@@ -154,11 +232,11 @@ async def generate_chapter(
         f"- Language: {context['language']}\n"
         f"- Learning Method: {context['learning_method']}\n\n"
         f"### TASK STEPS ###\n"
-        f"1. Start with the **Concepto Clave**: explain the core topic clearly using an analogy "
+        f"1. Start with the **{sn['key_concept']}** section: explain the core topic clearly using an analogy "
         f"or comparison a {context['age']}-year-old in {context['country']} would immediately understand\n"
-        f"2. Write **Ejemplo en tu Vida**: describe a concrete, vivid scenario from the student's "
+        f"2. Write the **{sn['life_example']}** section: describe a concrete, vivid scenario from the student's "
         f"daily life in {context['country']} that connects to this concept\n"
-        f"3. Craft **Pregunta para Pensar**: pose an open-ended question with no single right answer "
+        f"3. Craft the **{sn['think']}** section: pose an open-ended question with no single right answer "
         f"that encourages critical thinking\n"
         f"4. Choose 2-3 OPTIONAL sections that best fit THIS chapter's specific topic \u2014 "
         f"do NOT reuse the same combination from other chapters. Be creative!\n"
@@ -179,24 +257,23 @@ async def generate_chapter(
             f"This is a MATHEMATICS chapter. You MUST follow ALL of these rules:\n"
             f"1. Use LaTeX for EVERY number operation, formula, fraction, equation, or "
             f"mathematical expression — NO plain text like '1/2' or '3x4'.\n"
-            f"2. Use INLINE math `$...$` for expressions that appear inside sentences: "
-            f"   e.g. 'Tenemos $\\frac{{1}}{{2}}$ de la parcela restante, "
-            f"es decir $\\frac{{3}}{{6}} = \\frac{{1}}{{2}}$'.\n"
+            f"2. Use INLINE math `$...$` for expressions that appear inside sentences.\n"
             f"3. Use DISPLAY math `$$...$$` ONLY for standalone highlighted key formulas. "
             f"   NEVER place more than 2 display equations consecutively without text between them.\n"
             f"4. Each worked example MUST show EVERY step with LaTeX:\n"
             f"   $\\frac{{1}}{{2}} + \\frac{{1}}{{4}} = \\frac{{2}}{{4}} + \\frac{{1}}{{4}} = \\frac{{3}}{{4}}$\n"
             f"5. Include at least 5 fully solved practice problems with LaTeX in each chapter, "
-            f"   using Mexican everyday contexts (market prices, recipes, field areas, sharing food).\n"
-            f"6. Use LaTeX for list items that contain numbers: "
-            f"   '• $3 \\times 5 = 15$ tamales en total'\n"
+            f"   using everyday contexts from {context['country']} (market prices, recipes, sharing food).\n"
+            f"6. Use LaTeX for list items that contain numbers.\n"
             f"\n"
         )
 
     prompt += (
-        f"### LANGUAGE REQUIREMENT ###\n"
+        f"### LANGUAGE REQUIREMENT — CRITICAL ###\n"
         f"Write ENTIRELY in {context['language']}. Every heading, paragraph, question, and instruction "
-        f"MUST be in {context['language']}. Use culturally appropriate references for {context['country']}."
+        f"MUST be in {context['language']}. Use culturally appropriate references for {context['country']}.\n"
+        f"DO NOT mix languages. If the target language is English, ALL section headings must be in English. "
+        f"If the target language is Spanish, ALL headings must be in Spanish. Zero exceptions."
     )
     
     try:

@@ -318,7 +318,8 @@ html[dir="rtl"] .cover-desc {
   font-size: clamp(1.45rem, 2.8vw, 1.95rem); line-height: 1.2;
   color: var(--p-text-dark);
   border-left: 5px solid var(--p-primary);
-  padding-left: 16px;
+  /* Increased left padding so the accent bar never overlaps letter glyphs */
+  padding-left: 20px;
   position: relative; z-index: 1;
 }
 
@@ -421,7 +422,8 @@ html[dir="rtl"] .cover-desc {
   background: var(--p-light);
   border-left: 4px solid var(--p-primary);
   border-radius: 0 8px 8px 0;
-  padding: 15px 18px; margin: 18px 0;
+  /* Increased left padding so border never overlaps letter glyphs */
+  padding: 15px 18px 15px 24px; margin: 18px 0;
 }
 .blk-concept .blk-label { color: var(--p-primary); }
 
@@ -429,7 +431,8 @@ html[dir="rtl"] .cover-desc {
   background: rgba(42,122,107,.07);
   border-left: 4px solid var(--p-accent);
   border-radius: 0 8px 8px 0;
-  padding: 15px 18px; margin: 18px 0;
+  /* Increased left padding so border never overlaps letter glyphs */
+  padding: 15px 18px 15px 24px; margin: 18px 0;
 }
 .blk-example .blk-label { color: var(--p-accent); }
 
@@ -489,7 +492,7 @@ html[dir="rtl"] .cover-desc {
   font-size: .82rem;
 }
 .img-ph-icon { font-size: 2.4rem; opacity: .45; display: block; margin-bottom: 8px; }
-.img-block { margin: 20px 0; border-radius: 8px; overflow: hidden; border: 2px solid var(--p-light); box-shadow: 0 3px 12px rgba(0,0,0,.1); text-align: center; background: #fafafa; }
+.img-block { margin: 20px 0; border-radius: 8px; overflow: hidden; border: 2px solid var(--p-light); box-shadow: 0 3px 12px rgba(0,0,0,.1); text-align: center; background: #fafafa; page-break-inside: avoid; break-inside: avoid; }
 .img-block img { display: block; margin: 0 auto; max-width: 100%; width: auto; height: auto; max-height: 400px; object-fit: contain; }
 .img-caption { font-size: .7rem; color: var(--p-text-light); font-style: italic; padding: 5px 12px; background: var(--p-light); text-align: center; }
 
@@ -1037,6 +1040,10 @@ function paginateChapters(d) {
    or null if the block cannot be split further.
 ════════════════════════════════════════════════════════════════════════ */
 function splitOversizedBlock(blockEl) {
+  /* Images must NEVER be split across pages — treat as atomic units.
+     If an img-block overflows it will be moved whole to the next page. */
+  if (blockEl.classList.contains('img-block')) return null;
+
   var kids     = Array.from(blockEl.children);
   var hasLabel = kids.length > 0 && kids[0].classList.contains('blk-label');
   var startIdx = hasLabel ? 1 : 0;          /* first non-label child index */

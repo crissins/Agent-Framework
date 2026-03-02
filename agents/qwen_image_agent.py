@@ -38,16 +38,32 @@ QWEN_IMAGE_RESOLUTIONS = {
 }
 
 # Shared negative prompt — aggressively prevents ANY text/typography/numbers/letters
+# Key terms are front-loaded because diffusion models weight early tokens more heavily.
 _NO_TEXT_NEGATIVE_PROMPT = (
-    "text, words, letters, numbers, digits, alphabet, characters, chinese characters, "
-    "hanzi, kanji, hiragana, katakana, arabic script, cyrillic, english text, spanish text, "
-    "captions, labels, titles, subtitles, watermark, typography, fonts, writing, "
-    "inscriptions, signs, signage, street signs, book covers with text, newspaper, "
-    "speech bubbles, dialogue, annotations, printed text, handwriting, calligraphy, "
-    "signature, logo, brand name, brand, trademark, copyright symbol, "
+    # ── Highest priority: repeated word-class ban ───────────────────
+    "text, words, letters, numbers, digits, typography, writing, written text, "
+    "text in image, words in image, letters in image, numbers in image, "
+    "any readable characters, any text overlay, any caption, "
+    # ── Scripts and language systems ────────────────────────────────
+    "alphabet, latin characters, chinese characters, "
+    "hanzi, kanji, hiragana, katakana, arabic script, cyrillic, devanagari, "
+    "english text, spanish text, french text, any foreign script, "
+    # ── Typography and document elements ────────────────────────────
+    "captions, labels, title text, subtitles, watermark, fonts, font glyph, "
+    "inscriptions, signs, signage, street signs, road signs, shop signs, "
+    "book covers with text, newspaper, magazine text, "
+    "speech bubbles, dialogue boxes, thought bubbles, annotations, "
+    "printed text, handwriting, calligraphy, graffiti, chalk writing, "
+    "signature, logo text, brand name, trademark, copyright symbol, "
+    # ── Math and numeric notation ────────────────────────────────────
     "equations, formulas, mathematical notation, roman numerals, "
-    "banners, ribbons with text, plaques, nameplates, license plates, "
-    "scoreboard, clock face with numbers, calendar, price tags, barcodes, QR codes, "
+    "fractions, percentages, numeric displays, "
+    # ── Objects that typically carry text ───────────────────────────
+    "banners with text, ribbons with text, plaques, nameplates, "
+    "license plates, scoreboard, clock face with numbers, calendar, "
+    "price tags, barcodes, QR codes, receipts, menus, "
+    "chalkboard text, whiteboard text, screen text, billboard text, "
+    # ── Quality / artifact bans ──────────────────────────────────────
     "blur, low quality, deformed, distorted, "
     "unnatural anatomy, disfigured, bad art, ugly, pixelated, grain, glitch"
 )
@@ -181,7 +197,12 @@ PROMPT: A wool-felt panda wearing a blue police vest, running through animal kin
 ### RULES ###
 1. Output ONLY the two lines above — no markdown, no extra text, no explanations
 2. The prompt MUST be in English regardless of the chapter language
-3. NEVER include any request for text, words, letters, numbers, digits, labels, titles, signs, watermarks, writing, or typography of ANY kind. The image must be PURELY VISUAL with ZERO readable characters. This is the MOST IMPORTANT rule.
+3. **[CRITICAL — MOST IMPORTANT RULE]** The image must be 100% purely visual — zero readable characters of any kind.
+   - Do NOT describe any text, letters, words, numbers, or digits appearing in the image
+   - Do NOT include writing on any surface: chalkboard, whiteboard, paper, screen, wall, sign, banner, label, book cover, clock, scoreboard, price tag, license plate, etc.
+   - Do NOT mention speech bubbles, captions, watermarks, logos, brand names, or typographic elements
+   - Describe ONLY visual elements: colors, shapes, textures, people, objects, environments, lighting, mood
+   - This rule OVERRIDES everything else. Even if text seems natural (e.g. a classroom), describe it as purely visual, devoid of any legible markings.
 4. ALWAYS explicitly state: shot size, perspective, lens type, style, lighting, atmosphere, and at least one detail modifier
 5. Add atmosphere keywords ("warm and inviting", "mysterious", "dreamy", "majestic")
    and detail modifiers ("4K", "UHD", "sharp focus", "fine detail", "professional quality")
@@ -191,7 +212,7 @@ PROMPT: A wool-felt panda wearing a blue police vest, running through animal kin
 9. Prefer 1328*1328 (square) or 1104*1472 (portrait) for most images
 10. Choose the style yourself based on the subject matter using the Style Selection Guide above
 11. Include material/texture descriptors when they enhance the chosen style
-12. NEVER describe text on chalkboards, books, papers, screens, or any surface — show ONLY visual imagery"""
+12. NEVER describe text on chalkboards, books, papers, screens, or any surface — show ONLY purely visual imagery with zero legible markings"""
 
 
 # Default resolution when LLM doesn't specify or parsing fails
@@ -326,12 +347,12 @@ def _generate_llm_image_prompt(
 def _template_fallback_prompt(title: str, summary: str) -> str:
     """Simple template prompt used when the LLM is unavailable."""
     return (
-        f"ABSOLUTELY NO TEXT, NO LETTERS, NO NUMBERS, NO WORDS, NO WRITING. "
+        f"Purely visual scene with no writing, labels, or text anywhere. "
         f"Realistic photography style, medium shot, eye level perspective, "
         f"standard lens, natural sunlight, warm and inviting atmosphere, "
         f"fine detail, professional quality, 4K. "
         f"Subject: {title}. Setting: {summary[:300]}. "
-        f"The image must contain zero readable characters."
+        f"The scene must be purely visual with no legible markings of any kind."
     )
 
 
@@ -597,28 +618,26 @@ def generate_chapter_image(
 
 
 def _ensure_no_text_instruction(prompt: str) -> str:
-    """Ensure the prompt contains aggressive no-text/no-letters/no-numbers instructions.
+    """Ensure the prompt is purely visual with no text/letters/numbers.
 
-    The LLM prompt agent is instructed never to ask for text, but as a
-    safety-net we prepend the ban if it isn't already present.  We also
-    append a trailing reminder to reinforce the constraint.
+    IMPORTANT: We deliberately avoid placing explicit text-ban wording such as
+    "ABSOLUTELY NO TEXT" at the start of the positive prompt, because diffusion
+    models often render those instruction words as literal on-screen text.
+    Instead we use a soft positive-framing prefix ("purely visual scene, no
+    writing") and rely on the comprehensive negative prompt to block all
+    typography.  The negative prompt (_NO_TEXT_NEGATIVE_PROMPT) already lists
+    every kind of readable character exhaustively.
     """
     NO_TEXT_PREFIX = (
-        "ABSOLUTELY NO TEXT, NO LETTERS, NO NUMBERS, NO WORDS, NO WRITING, "
-        "NO TYPOGRAPHY, NO LABELS, NO SIGNS, NO CAPTIONS IN THE IMAGE. "
-        "The image must be purely visual with zero readable characters. "
+        "Purely visual scene with no writing, labels, or text anywhere. "
     )
     NO_TEXT_SUFFIX = (
-        " The image must contain NO text, NO letters, NO numbers, NO words, "
-        "NO writing of any kind. Purely visual, zero readable characters."
+        ", purely visual, no captions, no writing of any kind"
     )
-    marker = "NO TEXT"
+    # Only prepend/append if the prompt doesn't already contain the soft marker
+    marker = "purely visual"
     if marker.lower() not in prompt.lower():
         prompt = f"{NO_TEXT_PREFIX}{prompt}{NO_TEXT_SUFFIX}"
-    else:
-        # Even if it already has "NO TEXT", append the suffix reminder
-        if "zero readable characters" not in prompt.lower():
-            prompt = f"{prompt}{NO_TEXT_SUFFIX}"
     return prompt
 
 
