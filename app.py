@@ -172,7 +172,7 @@ def _render_batch_dashboard(bg: dict) -> None:
 
     import re as _re2
     def _scrub(s: str) -> str:
-        return _re2.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', '<workspace>\\', s)
+        return _re2.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', r'<workspace>\\', s)
 
     _CARD_STYLE = {
         "pending": ("#1c1c1c", "#555555"),
@@ -1093,7 +1093,7 @@ with _tab_batch:
                 key=f"bj_genre_{idx}",
             )
 
-            _da, _db, _dc, _dd = st.columns([4, 1, 2, 2])
+            _da, _db, _dc, _dd, _de = st.columns([4, 1, 1, 2, 2])
             _topic = _da.text_input(
                 "Topic", value=_batch_topic_default,
                 key=f"bj_topic_{idx}",
@@ -1102,12 +1102,17 @@ with _tab_batch:
                 "Chapters", min_value=1, max_value=12, value=3,
                 key=f"bj_nch_{idx}",
             )
-            _lang = _dc.selectbox(
+            _age = _dc.number_input(
+                "👧 Age", min_value=4, max_value=80, value=12, step=1,
+                key=f"bj_age_{idx}",
+                help="Target audience age (4–80).",
+            )
+            _lang = _dd.selectbox(
                 "🗣️ Language",
                 ["Spanish", "Portuguese", "English", "French", "German", "Italian", "Chinese", "Japanese"],
                 key=f"bj_lang_{idx}",
             )
-            _country = _dd.selectbox(
+            _country = _de.selectbox(
                 "🌎 Country",
                 ["World wide", "Mexico", "Colombia", "Argentina", "Chile", "Peru", "Brazil",
                  "USA", "Spain", "France", "Germany", "UK", "China", "Japan"],
@@ -1181,7 +1186,7 @@ with _tab_batch:
                 num_chapters=int(_nch),
                 language=_lang,
                 genre=_genre,
-                target_audience_age=14,
+                target_audience_age=int(_age),
                 country=_country,
                 learning_method="Project-Based Learning",
                 # ── image settings per job ──────────────────────────────
@@ -1269,7 +1274,7 @@ with _tab_batch:
         import re as _re
         def _sanitize_log(line: str) -> str:
             # Remove any Windows absolute path up to and including the workspace folder name
-            return _re.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', '<workspace>\\', line)
+            return _re.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', r'<workspace>\\', line)
 
         # Summary table — 7 columns
         _col_hdrs = st.columns([2, 2, 1, 1, 1, 1, 1])
@@ -1344,7 +1349,7 @@ with _tab_form:
     with c3:
         language = st.selectbox("🗣️ Language", ["Spanish", "Portuguese", "English"])
     with c4:
-        target_audience_age = st.slider("👧 Age", 8, 16, 8)
+        target_audience_age = st.slider("👧 Age", 4, 80, 10)
 
     c5, c6, c7, c8 = st.columns([2, 2, 1, 2])
     with c5:

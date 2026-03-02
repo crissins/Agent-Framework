@@ -258,7 +258,7 @@ def _run_job_in_thread(
         json_path = (json_dir / "book_output.json").resolve()
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(output_data, f, ensure_ascii=False, indent=2)
-        log_fn(f"💾 JSON saved → {json_path}")
+        log_fn(f"💾 JSON saved")
 
         # Resolve template
         effective_template_id = spec.template_id
@@ -275,6 +275,14 @@ def _run_job_in_thread(
             n_img = max(1, spec.images_per_chapter)
             images_dir = batch_dir / "images"
             images_dir.mkdir(parents=True, exist_ok=True)
+
+            def _rel(img_path: str) -> str:
+                """Relative path from html_dir to img_path, with forward slashes for HTML."""
+                try:
+                    return "../" + str(Path(img_path).relative_to(batch_dir)).replace("\\", "/")
+                except ValueError:
+                    return str(Path(img_path)).replace("\\", "/")
+
             if spec.use_ddg_images:
                 from agents.ddg_image_search_agent import search_and_download_image as _ddg_search
                 _img_loop = asyncio.new_event_loop()
@@ -297,7 +305,7 @@ def _run_job_in_thread(
                                 log_fn(f"⚠️ DDG image failed: {_ie}")
                         if found:
                             chapter.generated_images = found
-                            inject_md = "\n".join(f"![illustration]({p})" for p in found)
+                            inject_md = "\n".join(f"![illustration]({_rel(p)})" for p in found)
                             chapter.markdown_content = (
                                 re.sub(r'\[IMAGE:[^\]]*\]', '', chapter.markdown_content or '', count=len(found))
                                 + f"\n\n{inject_md}"
@@ -395,7 +403,7 @@ def _run_job_in_thread(
                     _chapter, _found2 = _item
                     if _found2:
                         _chapter.generated_images = _found2
-                        _inject = "\n".join(f"![illustration]({p})" for p in _found2)
+                        _inject = "\n".join(f"![illustration]({_rel(p)})" for p in _found2)
                         _chapter.markdown_content = (
                             re.sub(
                                 r'\[IMAGE:[^\]]*\]',
@@ -458,7 +466,7 @@ def _run_job_in_thread(
             template_id=effective_template_id,
             palette_id=spec.palette_id,
         )
-        log_fn(f"🌐 HTML saved → {html_path}")
+        log_fn(f"🌐 HTML saved")
 
         md_path = (md_dir / "book.md").resolve()
         book_output = BookOutput(
@@ -467,7 +475,7 @@ def _run_job_in_thread(
             chapters=full_chapters,
         )
         save_markdown_book(book_output, str(md_path))
-        log_fn(f"📄 Markdown saved → {md_path}")
+        log_fn(f"📄 Markdown saved")
 
         # ── Audio narration ───────────────────────────────────────────────
         audio_dir_str: str | None = None
