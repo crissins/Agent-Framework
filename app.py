@@ -1034,13 +1034,8 @@ with _tab_batch:
         "Jobs execute concurrently in separate threads."
     )
 
-    # ── Job builder ────────────────────────────────────────────────────────
-    st.markdown("#### 📋 Configure Jobs")
-
-    # ── Each job is fully independent ──────────────────────────────────────────────────
-    st.caption("💡 Every setting — images, audio, tokens — is configured independently per job.")
-    st.divider()
-
+    _specs: list = []
+    _run_batch_clicked = False
     _batch_topic_default = "Emotional Intelligence for Teenagers"
 
     def _batch_job_row(idx: int):
@@ -1234,19 +1229,25 @@ with _tab_batch:
                 tts_speech_rate=_job_tts_rate,
             )
 
-    _num_jobs = st.slider("Number of parallel jobs", 1, 6, 3, key="batch_num_jobs")
-    _specs = [_batch_job_row(i) for i in range(_num_jobs)]
-    _specs = [s for s in _specs if s is not None]
+    if not st.session_state.batch_running:
+        # ── Configure Jobs ───────────────────────────────────────────────────
+        st.markdown("#### 📋 Configure Jobs")
+        st.caption("💡 Every setting — images, audio, tokens — is configured independently per job.")
+        st.divider()
 
-    st.divider()
+        _num_jobs = st.slider("Number of parallel jobs", 1, 6, 3, key="batch_num_jobs")
+        _specs = [_batch_job_row(i) for i in range(_num_jobs)]
+        _specs = [s for s in _specs if s is not None]
 
-    # ── Run button ──────────────────────────────────────────────────────────
-    _run_batch_clicked = st.button(
-        f"🚀 Run {len(_specs)} Job(s) in Parallel",
-        type="primary",
-        disabled=len(_specs) == 0 or st.session_state.batch_running,
-        key="run_batch_btn",
-    )
+        st.divider()
+
+        # ── Run button ────────────────────────────────────────────────────────
+        _run_batch_clicked = st.button(
+            f"🚀 Run {len(_specs)} Job(s) in Parallel",
+            type="primary",
+            disabled=len(_specs) == 0 or st.session_state.batch_running,
+            key="run_batch_btn",
+        )
 
     if _run_batch_clicked and _specs:
         import threading as _threading
@@ -1296,16 +1297,73 @@ with _tab_batch:
 
     # ── Completed results ─────────────────────────────────────────────────────
     if st.session_state.batch_results:
-        st.markdown("#### 📊 Results")
-        _results: list = st.session_state.batch_results
-
-        # Sanitize a log line: strip absolute workspace paths
         import re as _re
+        import pathlib as _pl
+
         def _sanitize_log(line: str) -> str:
-            # Remove any Windows absolute path up to and including the workspace folder name
             return _re.sub(r'[A-Za-z]:[^\s]*Agent-Framework[^\s]*\\', r'<workspace>\\', line)
 
-        # Summary table — 7 columns
+        _results: list = st.session_state.batch_results
+
+        # ── Action bar ────────────────────────────────────────────────────────
+        _bar_a, _bar_b = st.columns([3, 1])
+        _bar_a.markdown("#### 📊 Results")
+        if _bar_b.button("🔄 New Batch", key="batch_new_run",
+                         help="Clear results and configure a new batch"):
+            st.session_state.batch_results = None
+            st.rerun()
+
+        # ── Download section (prominent, before table) ────────────────────────
+        _success_results = [r for r in _results if r.success]
+        if _success_results:
+            st.markdown("##### 📥 Download Books")
+            _n_dl = len(_success_results)
+            _dl_cols = st.columns(_n_dl)
+            for _ci, _r in enumerate(sorted(_success_results, key=lambda r: r.job_id)):
+                with _dl_cols[_ci]:
+                    st.markdown(f"**{_r.label}**  \n`{_r.model}`")
+                    if _r.html_path:
+                        try:
+                            _html_bytes = _pl.Path(_r.html_path).read_bytes()
+                            st.download_button(
+                                "📄 HTML",
+                                data=_html_bytes,
+                                file_name=f"book_{_r.job_id}.html",
+                                mime="text/html",
+                                key=f"dl_html_{_r.job_id}",
+                                use_container_width=True,
+                            )
+                        except Exception as _fe:
+                            st.caption(f"HTML unavailable: {_fe}")
+                    if getattr(_r, "json_path", None):
+                        try:
+                            _json_bytes = _pl.Path(_r.json_path).read_bytes()
+                            st.download_button(
+                                "📋 JSON",
+                                data=_json_bytes,
+                                file_name=f"book_{_r.job_id}.json",
+                                mime="application/json",
+                                key=f"dl_json_{_r.job_id}",
+                                use_container_width=True,
+                            )
+                        except Exception:
+                            pass
+                    if getattr(_r, "md_path", None):
+                        try:
+                            _md_bytes = _pl.Path(_r.md_path).read_bytes()
+                            st.download_button(
+                                "📝 Markdown",
+                                data=_md_bytes,
+                                file_name=f"book_{_r.job_id}.md",
+                                mime="text/markdown",
+                                key=f"dl_md_{_r.job_id}",
+                                use_container_width=True,
+                            )
+                        except Exception:
+                            pass
+            st.divider()
+
+        # ── Summary table ─────────────────────────────────────────────────────
         _col_hdrs = st.columns([2, 2, 1, 1, 1, 1, 1])
         for _h, _t in zip(
             _col_hdrs,
@@ -1327,34 +1385,14 @@ with _tab_batch:
             _rc[5].write(f"{_r.word_count:,}" if _r.success else "—")
             _rc[6].write(f"{_r.tokens_est:,}" if _r.success else "—")
 
-            # Inline error summary — shown immediately, with paths scrubbed
             if not _r.success:
                 _err_time = f"{_r.elapsed_sec:.0f}s" if _r.elapsed_sec else "?"
                 _err_toks = f"~{_r.tokens_est:,} tokens" if _r.tokens_est else "no tokens recorded"
-                _safe_err = _sanitize_log(_r.error)
                 st.error(
-                    f"❌ **{_r.label}** failed after {_err_time} ({_err_toks}): {_safe_err}"
+                    f"❌ **{_r.label}** failed after {_err_time} ({_err_toks}): "
+                    f"{_sanitize_log(_r.error or '')}"
                 )
 
-            # Download buttons for successful jobs
-            if _r.success and _r.html_path:
-                import pathlib as _pl
-                _html_file = _pl.Path(_r.html_path)
-                try:
-                    with open(_html_file, "rb") as _hf:
-                        _file_bytes = _hf.read()
-                    _dl_name = f"book_{_r.provider}_{_r.model.replace('.','_').replace('-','_')}.html"
-                    st.download_button(
-                        f"📥 {_r.label} — HTML",
-                        data=_file_bytes,
-                        file_name=_dl_name,
-                        mime="text/html",
-                        key=f"dl_html_{_r.job_id}",
-                    )
-                except Exception as _fe:
-                    st.warning(f"⚠️ Could not load HTML for {_r.label}: {_fe}")
-
-            # Log expander — paths scrubbed
             with st.expander(f"📋 Log — {_r.label}", expanded=not _r.success):
                 if _r.error:
                     st.error(_sanitize_log(_r.error))
