@@ -1099,8 +1099,8 @@ def narrate_chapter(
 
     narration_text = clean_text
 
-    # QwenTtsRealtime handles longer text, but use smaller chunks for reliability
-    MAX_CHARS = 2000
+    # Standard SpeechSynthesizer models can handle much longer text per call
+    MAX_CHARS = 8000 if model in _STANDARD_TTS_MODELS else 2000
     if len(narration_text) > MAX_CHARS:
         chunks = _split_text(narration_text, MAX_CHARS)
         logger.info(
@@ -1160,7 +1160,7 @@ def narrate_chapter(
             f"\u274c [Narrate] ALL chunks failed for '{chapter_title}' "
             f"after {_elapsed:.1f}s \u2014 0/{len(chunks)} synthesized. "
             f"Check DASHSCOPE_API_KEY, network connectivity, and DashScope quota. "
-            f"voice={voice}, model=qwen3-tts-vc-realtime"
+            f"voice={voice}, model={model}"
         )
         return None
 
