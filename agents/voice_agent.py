@@ -1097,8 +1097,7 @@ def narrate_chapter(
         )
         return None
 
-    # Add a natural intro
-    narration_text = f"{chapter_title}.\n\n{clean_text}"
+    narration_text = clean_text
 
     # QwenTtsRealtime handles longer text, but use smaller chunks for reliability
     MAX_CHARS = 2000
