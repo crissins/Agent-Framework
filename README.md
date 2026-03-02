@@ -4,6 +4,7 @@
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/Streamlit-1.54+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" alt="Streamlit" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
+  <a href="https://www.youtube.com/watch?v=Tr-6JnxO-9k"><img src="https://img.shields.io/badge/YouTube-Demo%20Video-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Demo" /></a>
 </p>
 
 <h1 align="center">📚 LATAM Book Generator</h1>
@@ -19,6 +20,7 @@
   <a href="#-demo">Demo</a> •
   <a href="#-why-this-matters">Why This Matters</a> •
   <a href="COPILOT_STORY.md">Copilot Story</a> •
+  <a href="https://www.youtube.com/watch?v=Tr-6JnxO-9k">📺 YouTube Demo</a> •
   <a href="docs/INDEX.md">Full Docs</a>
 </p>
 
@@ -254,6 +256,14 @@ python server.py
 
 ## 🎬 Demo
 
+### 📺 Watch the Full Demo
+
+[![LATAM Book Generator — Full Demo](https://img.youtube.com/vi/Tr-6JnxO-9k/maxresdefault.jpg)](https://www.youtube.com/watch?v=Tr-6JnxO-9k)
+
+> *Click the thumbnail to watch the complete walkthrough on YouTube — live book generation, voice narration, AI illustrations, and export in action.*
+
+---
+
 ### Chat-Driven Generation
 
 ```
@@ -411,6 +421,91 @@ python -m pytest tests/test_math_book.py -v
 | Tracing errors in the console | Normal when no OTLP collector is running — set `AITK_TRACING_ENABLED=0` to suppress |
 | `agent-framework` package not found | Ensure you're using Python 3.12+ and the virtual environment is activated |
 | DashScope 429 / rate limit | Switch Qwen region in sidebar (Singapore → Beijing → US-Virginia) or add backoff |
+
+---
+
+## 🚧 Known Issues & Work in Progress
+
+These are active limitations that are known and being tracked:
+
+| Area | Issue | Status |
+|------|-------|--------|
+| **DDG Image Search** | `ddg_image_search_agent.py` is functional but **does not meet production quality standards** — DuckDuckGo returns inconsistent results, has no relevance ranking, and the API is undocumented/unofficial. Used as a fallback only. | ⚠️ Needs replacement |
+| **DDG Video Search** | Same constraints as image search — YouTube results via DuckDuckGo are unreliable and miss the most relevant educational content. | ⚠️ Needs replacement |
+| **PDF Blocking** | PDF generation (`html_to_pdf_converter.py`) runs synchronously and blocks the Streamlit UI thread during export for large books. | 🔄 In progress |
+| **`app.py` Size** | The Streamlit UI file is 2,600+ lines — it handles all tabs (chat, form, voice, batch, settings) in a single module, making it harder to maintain as features grow. | 🔄 Planned refactor |
+| **Test Coverage** | Integration tests for the full book generation pipeline and golden-file tests for HTML templates are missing. Unit tests exist only for retry logic and chat agent contracts. | 🔄 Expanding |
+| **Voice Clone Quota** | `qwen3-tts-vc` voice cloning requires a DashScope account with TTS-VC quota enabled — it silently degrades to standard TTS when quota is absent. | 📋 Known behavior |
+| **CJK / RTL in PDF** | Unicode characters outside Latin script (Arabic, Chinese, Japanese) render as blank boxes in the PDF output. Use HTML export for full Unicode fidelity. | 📋 Known limitation |
+
+---
+
+## 🗺️ Roadmap & Future Improvements
+
+Planned enhancements ordered by impact:
+
+### 🔍 Search — Replace DDG with Azure AI Agents + Bing
+
+The current DuckDuckGo implementation for both image and YouTube search is a temporary stand-in. The planned replacement is **Bing Search via Azure AI Agents**, which provides:
+
+- Ranked, high-confidence image results with licensing metadata
+- Proper YouTube video relevance scoring with educational topic matching
+- Azure-grade reliability, SLA, and rate limits
+- Seamless integration with the existing Azure AI provider already in `config.py`
+
+```python
+# Planned: agents/bing_image_search_agent.py
+# Planned: agents/bing_video_search_agent.py
+# Using: azure-ai-projects + BingGroundingTool
+```
+
+This is the **highest-priority search improvement** — DDG quality is the weakest link in the current pipeline.
+
+---
+
+### ⚛️ React Frontend
+
+Streamlit is excellent for prototyping but has real limits at production scale: no fine-grained component control, limited real-time streaming, no code splitting, and a Python-locked rendering model. A React frontend would unlock:
+
+| Capability | Streamlit Today | React Target |
+|------------|----------------|--------------|
+| Real-time chapter streaming | `st.write_stream()` (limited) | Server-Sent Events / WebSocket |
+| Book preview | iFrame embed | Full interactive renderer |
+| Audio playback UI | Basic `st.audio` | Custom waveform + chapter timeline |
+| Mobile responsiveness | Limited | Full responsive layouts |
+| Routing / multi-page | `st.navigation()` | React Router |
+| Component reuse | Copy-paste | Composable component library |
+
+The existing `server.py` HTTP backend is already structured to serve as a headless API — a React frontend would consume it directly.
+
+---
+
+### 🐳 Docker Compose Deployment
+
+A `docker-compose.yml` with a Python service (app + server) and optional OTLP collector for tracing would make the project runnable without Python/venv setup.
+
+### 🧪 Expanded Test Suite
+
+- Golden-file tests for HTML template rendering
+- End-to-end generation pipeline integration tests with mocked LLM responses
+- Snapshot tests for Pydantic schema evolution
+
+### 📦 `app.py` Modularization
+
+Split the 2,600-line `app.py` into per-tab Streamlit page modules:
+
+```
+pages/
+  01_chat.py        ← Chat-driven book design
+  02_form.py        ← Manual form mode
+  03_voice.py       ← Voice cloning & audiobook
+  04_batch.py       ← Batch generator
+  05_settings.py    ← Provider config & API keys
+```
+
+### 🌐 Additional Language Support
+
+Extend i18n beyond the current 11 languages — particularly Quechua, Guaraní, and Haitian Creole for broader LATAM coverage.
 
 ---
 

@@ -4,17 +4,25 @@
 
 ---
 
+## 📺 See It in Action
+
+[![LATAM Book Generator — Full Demo](https://img.youtube.com/vi/Tr-6JnxO-9k/maxresdefault.jpg)](https://www.youtube.com/watch?v=Tr-6JnxO-9k)
+
+> *Watch the complete walkthrough: live book generation, voice narration, AI illustrations, and multi-format export.*
+
+---
+
 ## The Vision
 
 **350 million children in Latin America** deserve educational content that reflects their culture, language, and reality. The goal was ambitious: build a platform that could generate complete, publication-ready educational books — from a single natural-language prompt — with AI illustrations, audiobook narration, voice cloning, fact-checking, and multi-format export. All of it culturally tuned for LATAM countries.
 
-The stack chosen was **Python + Microsoft Agent Framework + Streamlit**, orchestrating 12+ specialized AI agents. Here is exactly how GitHub Copilot shaped that reality.
+The stack chosen was **Python + Microsoft Agent Framework + Streamlit**, orchestrating **16 specialized AI agents**. Here is exactly how GitHub Copilot shaped that reality.
 
 ---
 
 ## 1. Scaffolding the Project Architecture
 
-The first real challenge was deciding how to structure 12+ agents without creating a tangled mess. Copilot's **chat** helped reason through the folder layout:
+The first real challenge was deciding how to structure 16 agents without creating a tangled mess. Copilot's **chat** helped reason through the folder layout:
 
 ```
 agents/        ← One file per agent responsibility
@@ -42,7 +50,7 @@ class ModelProvider(Enum):
     AZURE   = "azure"
 ```
 
-Copilot also auto-completed the `get_model_config()` function that resolves the correct endpoint, API key environment variable, and `model_id` based on runtime flags — eliminating repetition across all 12 agent files.
+Copilot also auto-completed the `get_model_config()` function that resolves the correct endpoint, API key environment variable, and `model_id` based on runtime flags — eliminating repetition across all 16 agent files.
 
 **Specific help:** Copilot caught that DashScope has three separate regional endpoints (Singapore, Beijing, US) with different base URLs and latencies, and structured those as named constants rather than magic strings.
 
@@ -244,8 +252,10 @@ GitHub Copilot was not just an autocomplete engine here — it was a **design pa
 - Scaffolded the most complex modules (voice cloning, fact-checking pipeline, batch generator)
 - Wrote documentation and docstrings in the same pass as the code
 
-What would have taken weeks of solo development shipped in days. The LATAM Book Generator — with its 12 agents, 10 templates, 4 AI providers, and 5 export formats — is proof that Copilot doesn't just help you type faster. It helps you build *more*.
+What would have taken weeks of solo development shipped in days. The LATAM Book Generator — with its **16 agents**, 10 templates, 4 AI providers, and 5 export formats — is proof that Copilot doesn't just help you type faster. It helps you build *more*.
 
 ---
 
 *Built with ❤️ for LATAM children — co-authored with GitHub Copilot.*
+
+[![Watch the Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=Tr-6JnxO-9k)
