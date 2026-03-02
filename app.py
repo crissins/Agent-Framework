@@ -2726,9 +2726,10 @@ if run_full_generation:
                 print(f"🤖 Auto-picked template: {effective_template_id} (topic: {request.topic})")
             effective_palette_id = runtime.get("palette_id", palette_id)
 
-            html_path = html_dir / "libro_interactivo.html"
-            md_path   = md_dir   / "libro_interactivo.md"
-            pdf_path  = pdf_dir  / "libro_interactivo.pdf"
+            _file_slug = re.sub(r"[^\w\-]+", "_", request.topic.strip()).strip("_")[:80] or "book"
+            html_path = html_dir / f"{_file_slug}.html"
+            md_path   = md_dir   / f"{_file_slug}.md"
+            pdf_path  = pdf_dir  / f"{_file_slug}.pdf"
 
             book_output_obj = BookOutput(
                 book_request=request,
@@ -2793,6 +2794,7 @@ if run_full_generation:
             st.session_state.html_path = str(html_path)
             st.session_state.md_path = str(md_path)
             st.session_state.pdf_path = str(pdf_path)
+            st.session_state.file_slug = _file_slug
             st.session_state.output_data = output_data
             st.session_state.curriculum = curriculum
             st.session_state.full_chapters = full_chapters
@@ -3068,31 +3070,34 @@ if st.session_state.book_generated and st.session_state.curriculum:
     
     with colB:
         if st.session_state.html_path and os.path.exists(st.session_state.html_path):
+            _slug = st.session_state.get("file_slug", "book")
             with open(st.session_state.html_path, "rb") as f:
                 st.download_button(
                     label="🌐 HTML",
                     data=f,
-                    file_name="libro_interactivo.html",
+                    file_name=f"{_slug}.html",
                     mime="text/html"
                 )
     
     with colC:
         if st.session_state.md_path and os.path.exists(st.session_state.md_path):
+            _slug = st.session_state.get("file_slug", "book")
             with open(st.session_state.md_path, "rb") as f:
                 st.download_button(
                     label="📝 Markdown",
                     data=f,
-                    file_name="libro_interactivo.md",
+                    file_name=f"{_slug}.md",
                     mime="text/markdown"
                 )
     
     with colD:
         if st.session_state.pdf_path and os.path.exists(st.session_state.pdf_path):
+            _slug = st.session_state.get("file_slug", "book")
             with open(st.session_state.pdf_path, "rb") as f:
                 st.download_button(
                     label="📄 PDF",
                     data=f,
-                    file_name="libro_interactivo.pdf",
+                    file_name=f"{_slug}.pdf",
                     mime="application/pdf"
                 )
 
