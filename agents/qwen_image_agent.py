@@ -119,7 +119,9 @@ Transform a chapter title + summary into TWO outputs:
 2. The optimal resolution for this particular image
 
 ### STYLE SELECTION GUIDE ###
-Choose the SINGLE most fitting style based on subject matter — do NOT rely on user hints:
+Choose the SINGLE most fitting style based on subject matter. EXCEPTION: if the user
+message specifies a style with "IMPORTANT: Use this specific art style", you MUST use
+that style exactly and ignore this guide entirely.
 
 | Subject Matter                      | Recommended Style              |
 |-------------------------------------|--------------------------------|
@@ -147,14 +149,16 @@ When in doubt, prefer **Realistic photography** or **Educational illustration**.
 - Ink painting / Sumi-e — minimalist brushwork, expressive negative space, East Asian artistic tradition
 
 ### ADVANCED PROMPT FORMULA ###
-Build the prompt following this exact structure:
+Build the prompt following this exact structure. Be GENEROUS with detail at every step:
 
-  Entity (main subject with characteristics and actions)
-  + Environment (setting, location, weather, time of day)
-  + Style (from the styles list above)
-  + Camera language (shot size + perspective + lens type)
-  + Atmosphere (emotional tone and mood)
-  + Detail modifiers (technical quality + lighting + composition + material)
+  Entity  (main subject — describe appearance, colour, texture, expression, action, clothing, size)
+  + Supporting cast  (secondary elements, props, objects that enrich the scene)
+  + Environment  (specific setting, architecture or nature, weather, time of day, depth/background layers)
+  + Style  (from the styles list above, with at least ONE material or technique descriptor)
+  + Camera language  (shot size + perspective + lens type)
+  + Lighting  (primary + secondary light sources, colour temperature, shadow quality)
+  + Atmosphere  (emotional tone, mood, 2-3 descriptive adjectives)
+  + Detail modifiers  (technical quality + composition + at least two specific texture/material words)
 
 === PROMPT DICTIONARY (pick ONE from each category) ===
 
@@ -191,8 +195,8 @@ Line 1: RESOLUTION: <width*height>
 Line 2: PROMPT: <your image prompt>
 
 Example:
-RESOLUTION: 1328*1328
-PROMPT: A wool-felt panda wearing a blue police vest, running through animal kingdom city street shops at night, 3D cartoon Pixar-style rendering, medium shot, eye level perspective, standard lens, cinematic backlight with Tyndall effect, childlike wonder and adorable atmosphere, felt material texture, centered composition, 4K resolution, sharp focus, professional quality
+RESOLUTION: 1104*1472
+PROMPT: A cheerful young Latina girl with long dark braids wearing a bright yellow school uniform, kneeling beside a lush vegetable garden bed overflowing with ripe tomatoes, leafy spinach, and orange marigolds in full bloom, warm golden-hour sunlight streaming through the surrounding trees casting long dappled shadows across the rich brown soil, classic storybook illustration style with expressive hand-drawn ink outlines and vibrant watercolor washes, medium full shot at eye level, wide-angle lens capturing the garden depth, soft warm ambient light with gentle rim highlights on the girl's hair, childlike wonder and nurturing calm atmosphere, rule-of-thirds composition with the girl off-center and garden filling the background, watercolor paper grain texture, fine brushstroke detail, lush saturated greens and yellows, professional editorial quality, UHD sharp focus
 
 ### RULES ###
 1. Output ONLY the two lines above — no markdown, no extra text, no explanations
@@ -203,14 +207,14 @@ PROMPT: A wool-felt panda wearing a blue police vest, running through animal kin
    - Do NOT mention speech bubbles, captions, watermarks, logos, brand names, or typographic elements
    - Describe ONLY visual elements: colors, shapes, textures, people, objects, environments, lighting, mood
    - This rule OVERRIDES everything else. Even if text seems natural (e.g. a classroom), describe it as purely visual, devoid of any legible markings.
-4. ALWAYS explicitly state: shot size, perspective, lens type, style, lighting, atmosphere, and at least one detail modifier
-5. Add atmosphere keywords ("warm and inviting", "mysterious", "dreamy", "majestic")
-   and detail modifiers ("4K", "UHD", "sharp focus", "fine detail", "professional quality")
-6. Keep the prompt between 60 and 200 words
+4. ALWAYS explicitly state: main subject details, environment specifics, shot size, perspective, lens type, style, primary + secondary lighting, atmosphere (2-3 adjectives), and at least TWO detail modifiers
+5. Add atmosphere keywords ("warm and inviting", "mysterious", "dreamy", "majestic") and multiple
+   detail modifiers ("4K", "UHD", "sharp focus", "fine detail", "professional quality", texture words)
+6. Keep the prompt between 100 and 300 words — aim for the UPPER end for richer results
 7. Make imagery age-appropriate and culturally sensitive
 8. Focus ONLY on the educational topic — do NOT depict country flags, national symbols, or landmarks
 9. Prefer 1328*1328 (square) or 1104*1472 (portrait) for most images
-10. Choose the style yourself based on the subject matter using the Style Selection Guide above
+10. **Style**: If the user message specifies an art style ("IMPORTANT: Use this specific art style"), you MUST use that exact style. Otherwise, choose the best style yourself based on the Style Selection Guide above.
 11. Include material/texture descriptors when they enhance the chosen style
 12. NEVER describe text on chalkboards, books, papers, screens, or any surface — show ONLY purely visual imagery with zero legible markings"""
 
@@ -317,7 +321,10 @@ def _generate_llm_image_prompt(
             # low_budget is handled separately — should never reach here
         }
         style_label = _STYLE_LABELS.get(art_style, art_style)
-        user_msg += f"IMPORTANT: Use this specific art style: {style_label}.\n"
+        user_msg += (
+            f"IMPORTANT: Use this specific art style: {style_label}.\n"
+            f"You MUST apply this style. Do NOT choose a different style from the Style Selection Guide.\n"
+        )
     user_msg += (
         f"Choose the best resolution, "
         f"and generate the image prompt now."
@@ -332,7 +339,7 @@ def _generate_llm_image_prompt(
                 {"role": "system", "content": _IMAGE_PROMPT_SYSTEM},
                 {"role": "user",   "content": user_msg},
             ],
-            max_tokens=500,
+            max_tokens=700,
             temperature=0.9,
         )
         raw = resp.choices[0].message.content.strip()
@@ -345,14 +352,19 @@ def _generate_llm_image_prompt(
 
 
 def _template_fallback_prompt(title: str, summary: str) -> str:
-    """Simple template prompt used when the LLM is unavailable."""
+    """Richer template prompt used when the LLM is unavailable."""
     return (
-        f"Purely visual scene with no writing, labels, or text anywhere. "
-        f"Realistic photography style, medium shot, eye level perspective, "
-        f"standard lens, natural sunlight, warm and inviting atmosphere, "
-        f"fine detail, professional quality, 4K. "
-        f"Subject: {title}. Setting: {summary[:300]}. "
-        f"The scene must be purely visual with no legible markings of any kind."
+        f"Purely visual scene with absolutely no writing, labels, or text anywhere. "
+        f"Realistic photography style, capturing every fine surface detail and natural texture. "
+        f"Medium full shot at eye level, standard lens with slight bokeh background softness. "
+        f"Natural sunlight as primary source with soft diffused fill light, warm golden-hour colour "
+        f"temperature casting gentle shadows and rim highlights. "
+        f"Subject in the foreground: {title}. "
+        f"Background setting and context: {summary[:400]}. "
+        f"Warm and inviting atmosphere, serene and educational mood, childlike sense of wonder. "
+        f"Rule-of-thirds composition, shallow depth of field, leading lines drawing the eye to the subject. "
+        f"Fine surface textures clearly visible, professional colour grading, 4K UHD, sharp focus, "
+        f"magazine editorial quality. The entire scene must be 100%% purely visual with zero legible markings."
     )
 
 

@@ -490,6 +490,11 @@ def _resolve_runtime_options(parsed_chat_data: dict | None, defaults: dict) -> d
     except Exception:
         pass
 
+    # YouTube video search from chat
+    parsed_video_search = parsed_chat_data.get("youtube_video_search")
+    if parsed_video_search is not None:
+        resolved["enable_video_search"] = _to_bool(parsed_video_search, False)
+
     # Template ID from chat (supports "auto" for AI-driven selection)
     parsed_template = parsed_chat_data.get("template_id")
     if parsed_template and isinstance(parsed_template, str):
@@ -759,7 +764,8 @@ with st.sidebar:
         )
         generate_images = image_source == "AI Generate"
         use_ddg_images = image_source == "DDG Safe Search"
-        images_per_chapter = st.slider("Images per chapter", 0, 5, 1)
+        # Images-per-chapter is configured in the Form tab; use 1 as default for batch
+        images_per_chapter = 1
 
         art_style = st.selectbox(
             "🎨 Art Style",
@@ -796,15 +802,12 @@ with st.sidebar:
             disabled=not generate_images,
         )
 
-        enable_video_search = st.checkbox(
-            "🎬 YouTube Video Search",
-            value=False,
-            help="Find relevant YouTube videos and embed QR codes in each chapter",
-        )
         st.caption(
             "🧠 The AI automatically picks the best camera angle, "
             "lighting, and resolution for each image."
         )
+    # YouTube video search is configured in the Form tab; default False for batch/other uses
+    enable_video_search = False
 
     # ── Voice & Narration ───────────────────────────────────────────────
     with st.expander("🔊 Voice & Audio", expanded=True):
@@ -1327,9 +1330,10 @@ with _tab_form:
         )
     with _img_c:
         _form_images_per_chapter = st.number_input(
-            "Per chapter",
+            "Images/chapter",
             min_value=1, max_value=5, value=1, step=1,
             key="form_images_per_chapter",
+            help="Number of image descriptions to generate and render per chapter.",
             disabled=not _form_enable_images,
         )
     _form_ai_images = _form_enable_images and _form_image_source == "AI Generate"
@@ -1360,6 +1364,14 @@ with _tab_form:
             }.get(s, s),
             disabled=not _form_ai_images,
         )
+
+    # ── YouTube Video Search (form tab only — not used in audio-only workflow) ──
+    _form_enable_video_search = st.checkbox(
+        "🎬 YouTube Video Search",
+        value=False,
+        key="form_enable_video_search",
+        help="Find relevant YouTube videos and embed QR codes in each chapter. Not available in audio-only mode.",
+    )
 
     # ── Accessibility ──────────────────────────────────────────────────
     _accb = st.columns(1)[0]
@@ -2355,12 +2367,14 @@ if run_full_generation:
             "tts_speech_rate": tts_speech_rate,
             "template_id": template_id,
             "palette_id": palette_id,
+            "enable_video_search": _form_enable_video_search,
         },
     )
 
-    # Apply form-tab image model / style selections
+    # Apply form-tab image model / style / video search selections
     qwen_image_model = _form_qwen_image_model
     art_style = _form_art_style
+    enable_video_search = runtime.get("enable_video_search", _form_enable_video_search)
 
     if not _validate_generation_prereqs(
         use_qwen_models=runtime["use_qwen_models"],
@@ -2513,7 +2527,7 @@ if run_full_generation:
                     image_model=qwen_image_model,
                     images_per_chapter=runtime["images_per_chapter"],
                     use_ddg_images=runtime["use_ddg_images"],
-                    enable_video_search=enable_video_search,
+                    enable_video_search=runtime.get("enable_video_search", enable_video_search),
                     enable_tts=runtime["enable_tts"],
                     tts_voice=runtime["tts_voice"],
                     tts_model=runtime["tts_model"],
@@ -2697,6 +2711,7 @@ if run_audio_only_generation:
             "generate_images": False,
             "use_ddg_images": False,
             "images_per_chapter": 0,
+            "enable_video_search": False,  # never in audio-only mode
         },
     )
 
@@ -2758,14 +2773,7 @@ if run_audio_only_generation:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-            md_path = md_dir / "libro_audio_only.md"
-            book_output = BookOutput(
-                book_request=request,
-                curriculum=curriculum,
-                chapters=full_chapters,
-            )
-            save_markdown_book(book_output, str(md_path))
-
+            # Audio-only mode: no markdown file generated (only JSON is offered)
             collected_audio = _collect_audio_narrations(full_chapters, audio_dir_path)
             if not collected_audio:
                 raise ValueError(
@@ -2775,7 +2783,7 @@ if run_audio_only_generation:
             st.session_state.book_generated = True
             st.session_state.json_path = str(json_path)
             st.session_state.html_path = None
-            st.session_state.md_path = str(md_path)
+            st.session_state.md_path = None  # audio-only: no markdown offered
             st.session_state.pdf_path = None
             st.session_state.output_data = output_data
             st.session_state.curriculum = curriculum
@@ -2996,6 +3004,8 @@ if st.session_state.book_generated and st.session_state.curriculum:
     with st.expander("📘 Curriculum JSON"):
         st.json(st.session_state.curriculum.model_dump())
 
+    _is_audio_only = (st.session_state.output_data or {}).get("mode") == "audio_only"
+
     for i, ch in enumerate(st.session_state.full_chapters):
         with st.expander(f"Ch {i+1}: {ch.chapter_title}"):
             # Audio narration player
@@ -3017,37 +3027,38 @@ if st.session_state.book_generated and st.session_state.curriculum:
                         key=f"audio_dl_{i}",
                     )
 
-            st.divider()
-            # Sanitize markdown for Streamlit display — strips markers that
-            # look broken (image placeholders, video tags, raw Windows paths,
-            # and unmatched $ signs that confuse Streamlit's LaTeX renderer).
-            def _sanitize_md_for_display(text: str) -> str:
-                if not text:
-                    return ""
-                import re as _re
-                # Remove [IMAGE: ...] placeholders
-                text = _re.sub(r'\[IMAGE:[^\]]*\]', '', text)
-                # Remove [VIDEO: ...] placeholders
-                text = _re.sub(r'\[VIDEO:[^\]]*\]', '', text)
-                # Remove 🎬 video markers (various forms LLM generates)
-                text = _re.sub(r'[\U0001F3AC]\s*\*{0,2}[Vv]ideo\*{0,2}:?[^\n]*', '', text)
-                # Remove markdown images referencing local file paths — shown separately via st.image()
-                text = _re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)
-                # Remove lines that only contain asterisks / dashes (decorative separators that render oddly)
-                text = _re.sub(r'^\s*[\*\-]{3,}\s*$', '', text, flags=_re.MULTILINE)
-                # Strip trailing whitespace per line and collapse 3+ blank lines
-                text = _re.sub(r'\n{3,}', '\n\n', text)
-                return text.strip()
-            st.markdown(_sanitize_md_for_display(ch.markdown_content))
+            if not _is_audio_only:
+                st.divider()
+                # Sanitize markdown for Streamlit display — strips markers that
+                # look broken (image placeholders, video tags, raw Windows paths,
+                # and unmatched $ signs that confuse Streamlit's LaTeX renderer).
+                def _sanitize_md_for_display(text: str) -> str:
+                    if not text:
+                        return ""
+                    import re as _re
+                    # Remove [IMAGE: ...] placeholders
+                    text = _re.sub(r'\[IMAGE:[^\]]*\]', '', text)
+                    # Remove [VIDEO: ...] placeholders
+                    text = _re.sub(r'\[VIDEO:[^\]]*\]', '', text)
+                    # Remove 🎬 video markers (various forms LLM generates)
+                    text = _re.sub(r'[\U0001F3AC]\s*\*{0,2}[Vv]ideo\*{0,2}:?[^\n]*', '', text)
+                    # Remove markdown images referencing local file paths — shown separately via st.image()
+                    text = _re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)
+                    # Remove lines that only contain asterisks / dashes (decorative separators that render oddly)
+                    text = _re.sub(r'^\s*[\*\-]{3,}\s*$', '', text, flags=_re.MULTILINE)
+                    # Strip trailing whitespace per line and collapse 3+ blank lines
+                    text = _re.sub(r'\n{3,}', '\n\n', text)
+                    return text.strip()
+                st.markdown(_sanitize_md_for_display(ch.markdown_content))
 
             # Generated images
-            if hasattr(ch, 'generated_images') and ch.generated_images:
+            if not _is_audio_only and hasattr(ch, 'generated_images') and ch.generated_images:
                 for j, img in enumerate(ch.generated_images, 1):
                     st.caption(img.description)
                     st.image(img.url, width='stretch')
 
             # Videos with QR codes
-            if hasattr(ch, 'videos') and ch.videos:
+            if not _is_audio_only and hasattr(ch, 'videos') and ch.videos:
                 st.markdown("**🎬 Recommended Videos**")
                 for v in ch.videos:
                     st.markdown(f"[{v.title}]({v.url})")

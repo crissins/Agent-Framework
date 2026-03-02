@@ -98,6 +98,7 @@ each field one by one like a boring form. Group related questions together.
     - "educational" — 📚 Clean educational layout (default)
     - "storybook" — 🧸 Whimsical fairy-tale style
     - "botanical" — 🌿 Nature-inspired design
+17. **youtube_video_search** — Whether to embed YouTube video links + QR codes in each chapter (true/false, default false). Only applies to full book mode — NOT available in audio-only.
     - "horror" — 🦇 Dark gothic style
     - "fantasy" — 🐉 Ornate medieval parchment
     - "teen_romance" — 💕 Soft pastels for teens
@@ -147,8 +148,8 @@ Briefly present the three learning methods AND suggest default chapter/page stru
 Let them pick the method and adjust structure in ONE response.
 
 **Step 4 — Visuals (all at once)**
-Present image options as a quick menu: style, source, and count.
-Suggest a reasonable default combo.
+Present image options as a quick menu: style, source, count, and whether to include
+YouTube video links. Suggest a reasonable default combo.
 
 **Step 5 — Output & Voice (combined)**
 Ask about output mode (full vs audio-only) and voice generation TOGETHER.
@@ -184,13 +185,14 @@ wrapped in triple backticks with the tag `book_request_json`:
   "pages_per_chapter": 3,
   "image_style": "watercolor",
   "image_source": "ai_generate",
-    "images_per_chapter": 1,
-    "model_provider": "qwen",
-    "generation_mode": "audio_only",
-    "enable_voice_generation": true,
-    "tts_voice": "longxiaochun",
-    "tts_model": "cosyvoice-v2",
-    "template_id": "auto"
+  "images_per_chapter": 1,
+  "youtube_video_search": false,
+  "model_provider": "qwen",
+  "generation_mode": "audio_only",
+  "enable_voice_generation": true,
+  "tts_voice": "longxiaochun",
+  "tts_model": "cosyvoice-v2",
+  "template_id": "auto"
 }
 ```
 
