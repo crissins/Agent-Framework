@@ -175,6 +175,79 @@ def get_model_config(
     return ModelConfig.GITHUB_CONFIG
 
 
+def _check_github_models_scope(token: str) -> tuple[bool, str]:
+    """
+    Verify the GitHub token can actually reach the GitHub Models API.
+
+    Strategy:
+    1. Call https://api.github.com/user to get OAuth scopes (classic PATs).
+       If 'models' is listed → OK.
+    2. If no scopes returned (fine-grained PAT or GitHub App token), fall back
+       to a lightweight GET against the models catalog endpoint to confirm access.
+
+    Returns (ok, message).
+    """
+    import urllib.request
+    import urllib.error
+
+    headers = {"Authorization": f"Bearer {token}", "User-Agent": "libro-agent/1.0"}
+
+    # ── Step 1: check classic OAuth scopes ──────────────────────────────
+    try:
+        req = urllib.request.Request("https://api.github.com/user", headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            scopes_header = resp.headers.get("X-OAuth-Scopes", "")
+            scopes = [s.strip() for s in scopes_header.split(",") if s.strip()]
+            if "models" in scopes:
+                return True, "✅ GitHub Models configured (models scope ✓)"
+            # Fine-grained tokens return no OAuth scopes — fall through to live test
+            if scopes:
+                # Classic token but missing 'models' scope
+                return (
+                    False,
+                    f"❌ Your GITHUB_TOKEN is missing the 'models' scope.\n"
+                    f"Current scopes: {', '.join(scopes)}\n"
+                    "Fix: Go to https://github.com/settings/tokens → regenerate your token "
+                    "→ tick the 'models' permission → update your .env file.",
+                )
+    except Exception:
+        pass  # network hiccup — continue to live test
+
+    # ── Step 2: live test against the chat completions endpoint ───────────
+    # The catalog endpoint (/models) can return 200 even without inference rights.
+    # Test the actual inference endpoint with a minimal 1-token request.
+    try:
+        import json as _json
+        payload = _json.dumps({
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+        }).encode()
+        req2 = urllib.request.Request(
+            "https://models.inference.ai.azure.com/chat/completions",
+            data=payload,
+            headers={**headers, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req2, timeout=10) as resp2:
+            if resp2.status < 300:
+                return True, "✅ GitHub Models configured (inference verified ✓)"
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            return (
+                False,
+                "❌ Your GITHUB_TOKEN is not authorised for GitHub Models inference.\n"
+                "Fix: Go to https://github.com/settings/tokens →\n"
+                "  • Classic token: regenerate and tick the 'models' permission.\n"
+                "  • Fine-grained token: add 'Models > Read' under account permissions.\n"
+                "Then update your .env file with the new token.",
+            )
+    except Exception:
+        pass  # network error — don't block generation
+
+    return True, "✅ GitHub Models configured"
+
+
 def validate_api_keys(use_qwen: bool = False, provider: str | None = None) -> tuple[bool, str]:
     """
     Validate that required API keys are configured.
@@ -192,6 +265,10 @@ def validate_api_keys(use_qwen: bool = False, provider: str | None = None) -> tu
 
     if not api_key:
         return False, f"❌ Missing {api_key_env} environment variable"
+
+    # For GitHub Models, also verify the token has the 'models' scope
+    if config.get("provider") == "github":
+        return _check_github_models_scope(api_key)
 
     return True, f"✅ {config['description']} configured"
 

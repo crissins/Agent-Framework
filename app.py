@@ -48,7 +48,6 @@ from agents.chat_agent import create_chat_agent, parse_book_request_from_respons
 from agents.voice_clone_agent import create_voice as create_cloned_voice
 from agents.voice_clone_agent import narrate_chapter_vc
 from agents.audio_book_script_agent import generate_audio_script, prepare_script_for_tts
-from agents.audiobook_qa_agent import review_full_audiobook_for_blind_friendly
 from agents.voice_curriculum_agent import create_voice_curriculum_agent, generate_voice_curriculum
 from agents.genre_agents import generate_genre_book_async as _generate_genre_book_async
 from models.book_spec import BOOK_GENRES
@@ -125,7 +124,6 @@ st.session_state.setdefault("gen_model", None)
 st.session_state.setdefault("batch_results", None)    # list[BatchJobResult] | None
 st.session_state.setdefault("batch_running", False)
 st.session_state.setdefault("batch_status", {})       # live status dict from run_batch_parallel
-st.session_state.setdefault("blind_friendly_path", None)
 st.session_state.setdefault("color_friendly_path", None)
 st.session_state.setdefault("enable_tts", True)
 
@@ -217,6 +215,63 @@ def _render_batch_dashboard(bg: dict) -> None:
             f'</div>'
         )
         col.markdown(card, unsafe_allow_html=True)
+
+
+def _render_gen_card(
+    placeholder,
+    step_text: str,
+    step_idx: int,
+    total_steps: int,
+    topic: str = "",
+    *,
+    done: bool = False,
+    error: bool = False,
+) -> None:
+    """Render a single-book generation progress card (matches batch dashboard style)."""
+    if error:
+        bg_col, border = "#2a0a0a", "#ff4444"
+        icon = "❌"
+    elif done:
+        bg_col, border = "#0a2218", "#00c851"
+        icon = "✅"
+    else:
+        bg_col, border = "#0d1e35", "#4da6ff"
+        icon = "⚙️"
+
+    pct = 100 if done else int((step_idx / max(total_steps, 1)) * 100)
+    topic_esc = (topic[:55] + "…" if len(topic) > 55 else topic).replace("<", "&lt;").replace(">", "&gt;")
+    step_esc = step_text.replace("<", "&lt;").replace(">", "&gt;")
+    bar_fill = f'min-width:{"0" if pct == 0 else "6px"};background:{border};width:{pct}%;height:10px;border-radius:6px;'
+
+    card = (
+        f'<div style="background:{bg_col};border:2px solid {border};'
+        f'border-radius:10px;padding:14px 18px;margin:8px 0;font-family:monospace;">'
+        f'<div style="font-weight:bold;color:#fff;font-size:13px;margin-bottom:6px;">'
+        f'{icon} {topic_esc}</div>'
+        f'<div style="background:#1a1a1a;border-radius:6px;height:10px;margin:6px 0 10px 0;">'
+        f'<div style="{bar_fill}"></div></div>'
+        f'<div style="background:{border}22;border-left:3px solid {border};'
+        f'padding:6px 10px;border-radius:4px;color:{border};font-size:12px;'
+        f'font-weight:bold;word-break:break-word;">{step_esc}</div>'
+        f'</div>'
+    )
+    placeholder.markdown(card, unsafe_allow_html=True)
+
+
+def _strip_visual_for_blind(text: str) -> str:
+    """Strip visual-only markdown elements from chapter text for blind-friendly output."""
+    import re as _re
+    # Remove markdown images: ![alt](url)
+    text = _re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)
+    # Remove HTML img tags
+    text = _re.sub(r'<img[^>]*>', '', text, flags=_re.IGNORECASE)
+    # Remove [VIDEO: ...] / [IMG: ...] / [IMAGE: ...] inline tags
+    text = _re.sub(r'\[(VIDEO|IMG|IMAGE):[^\]]*\]', '', text, flags=_re.IGNORECASE)
+    # Remove QR code lines (contain 'qr_code' or 'QR Code')
+    text = _re.sub(r'.*(qr.?code|\bQR\b).*\n?', '', text, flags=_re.IGNORECASE)
+    # Collapse 3+ blank lines to 2
+    text = _re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 async def _run_chat_turn(user_message: str) -> str:
@@ -517,7 +572,7 @@ with st.sidebar:
             env_value=_env_github,
             env_var="GITHUB_TOKEN",
             input_key="ui_github_token_input",
-            help_text="Personal Access Token for GitHub Models (GITHUB_TOKEN).",
+            help_text="Personal Access Token for GitHub Models (GITHUB_TOKEN). Must have the 'models' scope — see github.com/settings/tokens.",
         )
 
         _dash_key = _key_row(
@@ -1307,29 +1362,14 @@ with _tab_form:
         )
 
     # ── Accessibility ──────────────────────────────────────────────────
-    _acca, _accb, _accc = st.columns(3)
-    with _acca:
-        auto_color_friendly = st.checkbox(
-            "🎨 Generate Color-Friendly Version",
-            value=False,
-            help="After generation, automatically re-exports the HTML with a WCAG 2.1 AA "
-                 "colorblind-safe palette (blues/ambers/teals instead of red/green).",
-            key="auto_color_friendly",
-        )
+    _accb = st.columns(1)[0]
+    auto_color_friendly = False
+    auto_blind_friendly = False
     with _accb:
         enable_tts = st.checkbox(
             "🎙️ Enable Audio Narration",
-            value=st.session_state.get("enable_tts", True),
             help="Generate spoken narration for each chapter using Qwen3 TTS-VC",
             key="enable_tts",
-        )
-    with _accc:
-        auto_blind_friendly = st.checkbox(
-            "👁️ Generate Blind-Friendly Scripts",
-            value=False,
-            help="Adapts each chapter for blind listeners BEFORE audio generation, "
-                 "so spoken narration uses the accessible version.",
-            key="auto_blind_friendly",
         )
 
     # ── Visual Template & Palette ──────────────────────────────────────
@@ -1753,8 +1793,14 @@ async def generate_book_async(
                         f"(sample_path={sample_path!r}). Please re-clone the voice."
                     )
 
-        # Only fall back to preset TTS when no clone was selected for this run
-        if chapter_narration is None and not _using_clone:
+        # Fallback to preset TTS when clone is absent OR clone synthesis exhausted
+        if chapter_narration is None:
+            if _using_clone:
+                print(
+                    f"⚠️ [TTS] Ch {ch_idx+1}: cloned-voice synthesis exhausted — "
+                    f"falling back to preset voice '{tts_voice}'. "
+                    f"Re-clone the voice in the 🎤 section if this persists."
+                )
             print(
                 f"🔊 [TTS] Chapter {ch_idx+1}: '{chapter.chapter_title}' — "
                 f"voice={tts_voice}, model={tts_model}, format={tts_audio_format}"
@@ -1782,12 +1828,19 @@ async def generate_book_async(
         return chapter_narration
 
     try:
+        # Step 1: Show progress card immediately then build curriculum
+        progress_placeholder = st.empty()
+        _render_gen_card(progress_placeholder, "📋 Building curriculum…", 0, 3, request.topic)
+
         # Step 2: Generate curriculum
         curriculum_agent = await create_curriculum_agent(use_qwen=use_qwen_models, model_id=text_model)
         curriculum = await generate_curriculum(curriculum_agent, request, max_tokens=max_tokens_curriculum)
 
         if not curriculum:
             raise ValueError("Failed to generate curriculum")
+
+        _total_steps = len(curriculum.chapters) + 2  # curriculum + N chapters + TTS collect
+        _render_gen_card(progress_placeholder, "✅ Curriculum ready — generating chapters…", 1, _total_steps, request.topic)
 
         # Step 3: Generate chapters + media in parallel per chapter
         chapter_agent = await create_chapter_agent(use_qwen=use_qwen_models, model_id=text_model)
@@ -1801,7 +1854,6 @@ async def generate_book_async(
 
         full_chapters: list = []
         previous_summaries: list[str] = []
-        progress_placeholder = st.empty()
         # TTS tasks fire in background — collected after all chapters are written
         pending_tts: list[tuple[int, object, "asyncio.Task"]] = []
 
@@ -1809,7 +1861,11 @@ async def generate_book_async(
             total = len(curriculum.chapters)
 
             # ── Chapter text (sequential — narrative continuity via previous_summaries) ──
-            progress_placeholder.info(f"📝 Generating Chapter {i+1}/{total}...")
+            _render_gen_card(
+                progress_placeholder,
+                f"📝 Chapter {i+1}/{total}: {outline.title[:50]}",
+                i + 1, _total_steps, request.topic,
+            )
             chapter = await generate_chapter(
                 chapter_agent, outline, context,
                 max_tokens=max_tokens_chapter,
@@ -1833,7 +1889,7 @@ async def generate_book_async(
             if generate_images and images_per_chapter:
                 placeholder_descs = getattr(chapter, 'image_placeholders', []) or []
                 for idx in range(images_per_chapter):
-                    img_title = placeholder_descs[idx] if idx < len(placeholder_descs) else f"{chapter.chapter_title} - illustration {idx+1}"
+                    img_title = placeholder_descs[idx] if idx < len(placeholder_descs) else chapter.chapter_title
                     img_summary = placeholder_descs[idx] if idx < len(placeholder_descs) else outline.summary
                     parallel_tasks.append(_run_sync(
                         generate_chapter_image,
@@ -1881,8 +1937,10 @@ async def generate_book_async(
                     parts.append(f"{'🎨' if generate_images else '🔍'} {n_imgs} image(s)")
                 if n_vids:
                     parts.append("🎬 video search")
-                progress_placeholder.info(
-                    f"⚡ Chapter {i+1}/{total} — parallel: {', '.join(parts)}..."
+                _render_gen_card(
+                    progress_placeholder,
+                    f"⚡ Ch {i+1}/{total} — parallel: {', '.join(parts)}…",
+                    i + 1, _total_steps, request.topic,
                 )
                 media_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
 
@@ -1921,8 +1979,10 @@ async def generate_book_async(
             if enable_tts:
                 tts_task = asyncio.create_task(_synthesize_tts(chapter, i))
                 pending_tts.append((i, chapter, tts_task))
-                progress_placeholder.info(
-                    f"📝 Chapter {i+1}/{total} done — 🔊 TTS running in background..."
+                _render_gen_card(
+                    progress_placeholder,
+                    f"📝 Ch {i+1}/{total} done — 🔊 TTS running in background…",
+                    i + 1, _total_steps, request.topic,
                 )
 
             full_chapters.append(chapter)
@@ -1932,7 +1992,11 @@ async def generate_book_async(
         if pending_tts:
             remaining = [task for _, _, task in pending_tts if not task.done()]
             if remaining:
-                progress_placeholder.info(f"⏳ Waiting for {len(remaining)} audio narration(s) to finish...")
+                _render_gen_card(
+                    progress_placeholder,
+                    f"⏳ Waiting for {len(remaining)} audio narration(s) to finish…",
+                    len(curriculum.chapters) + 1, _total_steps, request.topic,
+                )
                 await asyncio.gather(*remaining, return_exceptions=True)
             for ch_idx, chapter, tts_task in pending_tts:
                 try:
@@ -1975,23 +2039,31 @@ async def generate_audio_book_only_async(
     """Generate audiobook assets only (curriculum + chapters + narration), no HTML/PDF/images."""
     import logging as _logging
     _audio_logger = _logging.getLogger("audiobook_pipeline")
+    _vc_summary = (
+        f"name={voice_clone_profile.get('name','?')}  "
+        f"voice={str(voice_clone_profile.get('voice',''))[:40]}..."
+        if voice_clone_profile else "None"
+    )
     _audio_logger.info(
         f"\n{'='*60}\n"
         f"🎧 AUDIOBOOK-ONLY PIPELINE STARTING\n"
         f"  topic       = {request.topic}\n"
         f"  language    = {request.language}\n"
-        f"  tts_voice   = {tts_voice}\n"
+        f"  tts_voice   = {tts_voice}  (preset fallback — only used if clone is absent)\n"
         f"  tts_model   = {tts_model}\n"
         f"  tts_format  = {tts_audio_format}\n"
         f"  speech_rate = {tts_speech_rate}\n"
         f"  audio_dir   = {audio_dir}\n"
         f"  use_qwen    = {use_qwen_models}\n"
         f"  text_model  = {text_model}\n"
-        f"  voice_clone = {voice_clone_profile is not None}\n"
+        f"  voice_clone = {_vc_summary}\n"
         f"  DASHSCOPE_API_KEY set = {bool(os.getenv('DASHSCOPE_API_KEY'))}\n"
         f"{'='*60}"
     )
     try:
+        progress_placeholder = st.empty()
+        _render_gen_card(progress_placeholder, "📋 Building voice curriculum…", 0, 3, request.topic)
+
         curriculum_agent = await create_voice_curriculum_agent(
             use_qwen=use_qwen_models,
             model_id=text_model,
@@ -1999,6 +2071,9 @@ async def generate_audio_book_only_async(
         curriculum = await generate_voice_curriculum(curriculum_agent, request)
         if not curriculum:
             raise ValueError("Failed to generate voice curriculum")
+
+        _vo_total_steps = len(curriculum.chapters) + 2  # curriculum + N chapters + TTS collect
+        _render_gen_card(progress_placeholder, "✅ Curriculum ready — generating voice chapters…", 1, _vo_total_steps, request.topic)
 
         chapter_agent = await create_voice_chapter_agent(
             use_qwen=use_qwen_models,
@@ -2014,7 +2089,6 @@ async def generate_audio_book_only_async(
 
         full_chapters = []
         previous_summaries: list[str] = []
-        progress_placeholder = st.empty()
         pending_audio_tts: list[tuple[int, object, object]] = []  # (ch_idx, chapter, task)
 
         # ── Inner coroutine: script generation + TTS for one chapter ──────────
@@ -2141,8 +2215,16 @@ async def generate_audio_book_only_async(
                             f"Please re-clone the voice in the 🎤 Voice Cloning section."
                         )
 
-            # Only use preset-voice TTS when no clone profile was active for this run
-            if narration_result is None and not _using_clone:
+            # Fallback to preset TTS voice when:
+            #  a) no clone profile was ever active for this run, OR
+            #  b) clone synthesis failed completely (after re-enrollment attempt)
+            if narration_result is None:
+                if _using_clone:
+                    _audio_logger.warning(
+                        f"  [Ch {ch_idx+1}] ⚠️ Cloned-voice synthesis exhausted — "
+                        f"falling back to preset voice '{tts_voice}'. "
+                        f"Re-clone the voice in the 🎤 Voice Cloning section if this persists."
+                    )
                 _audio_logger.info(
                     f"  [Ch {ch_idx+1}] Calling narrate_chapter: voice={tts_voice}, "
                     f"model={tts_model}, format={tts_audio_format}, rate={tts_speech_rate}"
@@ -2170,7 +2252,11 @@ async def generate_audio_book_only_async(
 
         # ── Sequential chapter text generation + background TTS ────────────────
         for i, outline in enumerate(curriculum.chapters):
-            progress_placeholder.info(f"🎙️ Generating voice chapter {i+1}/{len(curriculum.chapters)}...")
+            _render_gen_card(
+                progress_placeholder,
+                f"🎤 Voice chapter {i+1}/{len(curriculum.chapters)}: {outline.title[:50]}",
+                i + 1, _vo_total_steps, request.topic,
+            )
             chapter = await generate_voice_chapter(
                 chapter_agent, outline, context,
                 curriculum=curriculum,
@@ -2188,16 +2274,21 @@ async def generate_audio_book_only_async(
             # ── Fire TTS as background task while next chapter text generates ──
             tts_task = asyncio.create_task(_audio_script_and_tts(chapter, i))
             pending_audio_tts.append((i, chapter, tts_task))
-            progress_placeholder.info(
-                f"📝 Voice chapter {i+1}/{len(curriculum.chapters)} done — "
-                f"🔊 script+TTS running in background..."
+            _render_gen_card(
+                progress_placeholder,
+                f"📝 Voice ch {i+1}/{len(curriculum.chapters)} done — 🔊 script+TTS running…",
+                i + 1, _vo_total_steps, request.topic,
             )
 
         # ── Collect all background TTS tasks ──────────────────────────────────
         if pending_audio_tts:
             remaining = [t for _, _, t in pending_audio_tts if not t.done()]
             if remaining:
-                progress_placeholder.info(f"⏳ Waiting for {len(remaining)} audio narration(s) to finish...")
+                _render_gen_card(
+                    progress_placeholder,
+                    f"⏳ Waiting for {len(remaining)} audio narration(s) to finish…",
+                    len(curriculum.chapters) + 1, _vo_total_steps, request.topic,
+                )
                 await asyncio.gather(*remaining, return_exceptions=True)
             for ch_idx, chapter, tts_task in pending_audio_tts:
                 try:
@@ -2306,8 +2397,10 @@ if run_full_generation:
         _genre = getattr(request, "genre", "educational")
         if _genre != "educational":
             _progress_ph = st.empty()
-            def _genre_progress(msg: str):
-                _progress_ph.info(msg)
+            _genre_step = [0]  # mutable counter for closure
+            def _genre_progress(msg: str, _ph=_progress_ph, _topic=request.topic, _ctr=_genre_step):
+                _ctr[0] += 1
+                _render_gen_card(_ph, msg, _ctr[0], max(_ctr[0] + 1, 4), _topic)
             curriculum, full_chapters = asyncio.run(
                 _generate_genre_book_async(
                     request,
@@ -2325,8 +2418,10 @@ if run_full_generation:
             if full_chapters and (runtime["generate_images"] or runtime["use_ddg_images"]):
                 _imgs_per_ch = runtime["images_per_chapter"]
                 _img_ph = st.empty()
-                _img_ph.info(
-                    f"⚡ Generating images for all {len(full_chapters)} genre chapters in parallel..."
+                _render_gen_card(
+                    _img_ph,
+                    f"⚡ Generating images for all {len(full_chapters)} genre chapters in parallel…",
+                    1, 2, request.topic,
                 )
 
                 async def _genre_images_async():
@@ -2349,7 +2444,7 @@ if run_full_generation:
                         _tasks, _task_meta = [], []
                         for _i, _ch, _ch_folder, _descs in ch_meta:
                             for _idx in range(_imgs_per_ch or 0):
-                                _title = _descs[_idx] if _idx < len(_descs) else f"{_ch.chapter_title} illustration {_idx+1}"
+                                _title = _descs[_idx] if _idx < len(_descs) else _ch.chapter_title
                                 _tasks.append(asyncio.to_thread(
                                     generate_chapter_image,
                                     title=_title,
@@ -2560,44 +2655,8 @@ if run_full_generation:
                         st.success("✅ Color-friendly HTML ready!")
 
             if auto_blind_friendly and st.session_state.full_chapters:
-                with st.spinner("👁️ Adapting chapters for blind-friendly accessibility..."):
-                    _bf_scripts = [ch.markdown_content or "" for ch in st.session_state.full_chapters]
-                    _bf_titles  = [ch.chapter_title for ch in st.session_state.full_chapters]
-                    _bf_req     = (st.session_state.output_data or {}).get("book_request", {})
-                    _bf_adapted = asyncio.run(
-                        review_full_audiobook_for_blind_friendly(
-                            scripts=_bf_scripts,
-                            chapter_titles=_bf_titles,
-                            language=_bf_req.get("language", language),
-                            target_age=int(_bf_req.get("target_audience_age", target_audience_age)),
-                            use_qwen=use_qwen_models,
-                        )
-                    )
-                    _bf_path = (
-                        str(st.session_state.md_path).replace(".md", "_blind_friendly.md")
-                        if st.session_state.md_path
-                        else "books/libro_blind_friendly.md"
-                    )
-                    Path(_bf_path).parent.mkdir(parents=True, exist_ok=True)
-                    with open(_bf_path, "w", encoding="utf-8") as _bf_f:
-                        _bf_f.write("# Blind-Friendly Edition\n\n")
-                        for _t, _s in zip(_bf_titles, _bf_adapted):
-                            # Strip any leading heading / title echo the LLM may have added
-                            _s_lines = _s.strip().splitlines()
-                            _t_norm = re.sub(r'[^\w\s]', '', _t.lower()).strip()
-                            while _s_lines:
-                                _l = _s_lines[0].strip()
-                                _l_text = re.sub(r'^#+\s*', '', _l)  # strip leading #
-                                _l_norm = re.sub(r'[^\w\s]', '', _l_text.lower()).strip()
-                                if (_l_norm == _t_norm or _t_norm in _l_norm
-                                        or not _l_norm):  # also skip blank first lines
-                                    _s_lines.pop(0)
-                                else:
-                                    break
-                            _s_clean = "\n".join(_s_lines).strip()
-                            _bf_f.write(f"## {_t}\n\n{_s_clean}\n\n---\n\n")
-                    st.session_state.blind_friendly_path = _bf_path
-                    st.success("✅ Blind-friendly scripts ready!")
+                for _bfch in st.session_state.full_chapters:
+                    _bfch.markdown_content = _strip_visual_for_blind(_bfch.markdown_content or "")
 
             print(f"\n✅ Book generated successfully in organized folders!\n")
             st.success("✅ Book generated successfully!")
@@ -2648,7 +2707,7 @@ if run_audio_only_generation:
     if not _validate_generation_prereqs(
         use_qwen_models=runtime["use_qwen_models"],
         enable_tts=runtime["enable_tts"],
-        voice_clone_profile=active_clone_profile,
+        voice_clone_profile=st.session_state.voice_clone_profile or active_clone_profile,
         generate_images=runtime.get("generate_images", False),
     ):
         st.stop()
@@ -2664,6 +2723,10 @@ if run_audio_only_generation:
         md_dir.mkdir(parents=True, exist_ok=True)
 
         _gen_t0 = time.perf_counter()
+        # For audio-only mode, honour the saved clone profile regardless of whether
+        # the form-tab "Enable Audio Narration" / "Use Cloned Voice" checkboxes are
+        # ticked — those guard the full-book flow, not the dedicated audio-only path.
+        _ao_clone = st.session_state.voice_clone_profile or active_clone_profile
         curriculum, full_chapters = asyncio.run(
             generate_audio_book_only_async(
                 request=request,
@@ -2674,8 +2737,8 @@ if run_audio_only_generation:
                 tts_model=runtime["tts_model"],
                 tts_audio_format=runtime["tts_audio_format"],
                 tts_speech_rate=runtime["tts_speech_rate"],
-                audio_dir=str(audio_dir_path),
-                voice_clone_profile=active_clone_profile,
+                audio_dir=str(audio_dir_path.resolve()),
+                voice_clone_profile=_ao_clone,
             )
         )
         st.session_state.gen_time = time.perf_counter() - _gen_t0
@@ -2882,31 +2945,6 @@ if st.session_state.book_generated and st.session_state.curriculum:
                     file_name="libro_interactivo.pdf",
                     mime="application/pdf"
                 )
-
-    # === Accessibility Downloads ===
-    if st.session_state.color_friendly_path or st.session_state.blind_friendly_path:
-        st.subheader("♿ Accessibility Outputs")
-        _dl_col1, _dl_col2 = st.columns(2)
-        with _dl_col1:
-            if st.session_state.color_friendly_path and os.path.exists(st.session_state.color_friendly_path):
-                with open(st.session_state.color_friendly_path, "rb") as f:
-                    st.download_button(
-                        label="⬇️ Download Color-Friendly HTML",
-                        data=f,
-                        file_name="libro_color_friendly.html",
-                        mime="text/html",
-                        key="dl_color_friendly",
-                    )
-        with _dl_col2:
-            if st.session_state.blind_friendly_path and os.path.exists(st.session_state.blind_friendly_path):
-                with open(st.session_state.blind_friendly_path, "rb") as f:
-                    st.download_button(
-                        label="⬇️ Download Blind-Friendly Markdown",
-                        data=f,
-                        file_name="libro_blind_friendly.md",
-                        mime="text/markdown",
-                        key="dl_blind_friendly",
-                    )
 
     # === Audiobook Download ===
     audio_files = list(st.session_state.audio_narrations or [])

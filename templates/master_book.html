@@ -1178,7 +1178,9 @@ function repairOverflow() {
 
       if (overflow.length === 0) continue;
 
-      /* Keep the first block when ALL overflow to prevent infinite loops */
+      /* Keep the first block when ALL overflow to prevent infinite loops.
+        Fallback below handles truly unsplittable cases by moving the whole
+        block to the next/continuation page so text is never clipped. */
       var toMove = (overflow.length === blks.length) ? overflow.slice(1) : overflow;
 
       /* When the very first block itself overflows (all-overflow guard fired),
@@ -1203,6 +1205,11 @@ function repairOverflow() {
           frame.style.overflow = '';
           toMove = allOver2 ? toMove2.slice(1) : toMove2;
           blks   = blks2;
+        } else {
+          /* Unsplittable single overflow block (common when the first page has
+             chapter title overhead). Move the whole block to next page instead
+             of leaving it cropped under the footer. */
+          toMove = overflow;
         }
       }
 
@@ -1317,6 +1324,50 @@ function render(d) {
 }
 
 render(BOOK);
+
+/* ════════════════════════════════════════════════════════════════════════
+   PASS 5 — RE-REPAIR AFTER IMAGES LOAD
+   Images are async: their heights are 0 when repairOverflow() first runs.
+   Once they load they expand, pushing blocks below the footer where
+   overflow:hidden silently clips them. Re-running repairOverflow() after
+   all images have settled permanently fixes the cut-off content bug.
+════════════════════════════════════════════════════════════════════════ */
+(function() {
+  var imgs = Array.from(document.querySelectorAll('.book-page img'));
+  if (imgs.length === 0) return;
+
+  var pending = 0;
+  var scheduled = false;
+
+  function scheduleRepair() {
+    if (scheduled) return;
+    scheduled = true;
+    /* Use rAF + setTimeout to ensure layout is fully settled after images expand */
+    requestAnimationFrame(function() {
+      setTimeout(function() {
+        repairOverflow();
+        scheduled = false;
+      }, 80);
+    });
+  }
+
+  imgs.forEach(function(img) {
+    if (img.complete && img.naturalHeight > 0) return; /* already loaded */
+    pending++;
+    img.addEventListener('load', function() {
+      pending--;
+      scheduleRepair();
+    }, { once: true });
+    img.addEventListener('error', function() {
+      pending--;
+    }, { once: true });
+  });
+
+  /* Safety net: also repair on window load in case any images slipped through */
+  window.addEventListener('load', function() {
+    scheduleRepair();
+  }, { once: true });
+})();
 </script>
 </body>
 </html>

@@ -72,6 +72,7 @@ books/json/
 books/md/
 books/pdf/
 books/voice_clones/
+books/
 
 # Scraped / downloaded PDFs from webscrap tools
 webscrap/**/output_pdfs/
