@@ -47,7 +47,7 @@ build/
 .installed.cfg
 *.egg
 
-# IDE - personal settings only (launch/tasks are tracked)
+# IDE — only personal/machine-specific settings
 .idea/
 .vscode/settings.json
 *.swp
