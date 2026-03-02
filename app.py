@@ -1052,7 +1052,7 @@ with _tab_batch:
         help="Generates spoken narration for every chapter using the Voice & Audio settings from the sidebar.",
     )
     if _batch_generate_images:
-        st.caption(f"🖼️ Images: {'AI Generate' if generate_images else ('DDG Search' if use_ddg_images else 'None')} · {images_per_chapter}/chapter · style={art_style}")
+        st.caption("🖼️ Images: configure source, count, and style per job below.")
     if _batch_enable_tts:
         st.caption(f"🔊 Audio: {tts_voice} · {tts_model} · {tts_audio_format} · rate={tts_speech_rate}")
     st.divider()
@@ -1093,7 +1093,7 @@ with _tab_batch:
                 key=f"bj_genre_{idx}",
             )
 
-            _da, _db, _dc = st.columns([4, 1, 1])
+            _da, _db, _dc, _dd = st.columns([4, 1, 2, 2])
             _topic = _da.text_input(
                 "Topic", value=_batch_topic_default,
                 key=f"bj_topic_{idx}",
@@ -1103,9 +1103,74 @@ with _tab_batch:
                 key=f"bj_nch_{idx}",
             )
             _lang = _dc.selectbox(
-                "Language", ["English", "Spanish", "Portuguese"],
+                "🗣️ Language",
+                ["Spanish", "Portuguese", "English", "French", "German", "Italian", "Chinese", "Japanese"],
                 key=f"bj_lang_{idx}",
             )
+            _country = _dd.selectbox(
+                "🌎 Country",
+                ["World wide", "Mexico", "Colombia", "Argentina", "Chile", "Peru", "Brazil",
+                 "USA", "Spain", "France", "Germany", "UK", "China", "Japan"],
+                key=f"bj_country_{idx}",
+            )
+
+            _opt_a, _opt_b = st.columns(2)
+            _batch_job_youtube = _opt_a.checkbox(
+                "🎬 YouTube Video Search",
+                value=False,
+                key=f"bj_yt_{idx}",
+                help="Find relevant YouTube videos and embed QR codes in each chapter.",
+            )
+
+            # ── Per-job image settings (only shown when global images toggle is on) ──
+            _job_gen_images = False
+            _job_ddg_images = False
+            _job_images_per_chapter = 0
+            _job_image_model = qwen_image_model
+            _job_art_style = "auto"
+            if _batch_generate_images:
+                _img_row_a, _img_row_b, _img_row_c, _img_row_d = st.columns([2, 1, 2, 2])
+                _job_img_source = _img_row_a.radio(
+                    "🖼️ Image Source",
+                    ["AI Generate", "DDG Search", "None"],
+                    index=0,
+                    horizontal=True,
+                    key=f"bj_img_src_{idx}",
+                )
+                _job_gen_images = _job_img_source == "AI Generate"
+                _job_ddg_images = _job_img_source == "DDG Search"
+                _job_images_per_chapter = _img_row_b.number_input(
+                    "Imgs/Ch",
+                    min_value=1, max_value=5, value=1, step=1,
+                    key=f"bj_img_n_{idx}",
+                    disabled=_job_img_source == "None",
+                )
+                _job_image_model = _img_row_c.selectbox(
+                    "🤖 Image Model",
+                    ["qwen-image-plus", "qwen-image-max"],
+                    index=0,
+                    key=f"bj_img_model_{idx}",
+                    disabled=not _job_gen_images,
+                )
+                _job_art_style = _img_row_d.selectbox(
+                    "🎨 Art Style",
+                    ["auto", "watercolor", "cartoon", "realistic", "flat_vector",
+                     "pixel_art", "storybook", "3d_cartoon", "oil_painting",
+                     "educational", "ink_painting", "low_budget"],
+                    index=0,
+                    key=f"bj_art_{idx}",
+                    format_func=lambda s: {
+                        "auto": "🧠 Auto", "watercolor": "🎨 Watercolor",
+                        "cartoon": "🖍️ Cartoon", "realistic": "📷 Realistic",
+                        "flat_vector": "📐 Flat/Vector", "pixel_art": "👾 Pixel Art",
+                        "storybook": "📖 Storybook", "3d_cartoon": "🧸 3D Cartoon",
+                        "oil_painting": "🖼️ Oil Painting", "educational": "📚 Educational",
+                        "ink_painting": "🖌️ Ink/Sumi-e", "low_budget": "🖍️ B&W Coloring",
+                    }.get(s, s),
+                    disabled=not _job_gen_images,
+                )
+                if _job_img_source == "None":
+                    _job_images_per_chapter = 0
 
             return BatchJobSpec(
                 job_id=f"job_{idx + 1}",
@@ -1117,14 +1182,16 @@ with _tab_batch:
                 language=_lang,
                 genre=_genre,
                 target_audience_age=14,
-                country="World wide",
+                country=_country,
                 learning_method="Project-Based Learning",
-                # ── image settings from sidebar ─────────────────────────
-                generate_images=generate_images if _batch_generate_images else False,
-                use_ddg_images=use_ddg_images if _batch_generate_images else False,
-                images_per_chapter=images_per_chapter if _batch_generate_images else 0,
-                image_model=qwen_image_model,
-                art_style=art_style,
+                # ── image settings per job ──────────────────────────────
+                generate_images=_job_gen_images,
+                use_ddg_images=_job_ddg_images,
+                images_per_chapter=int(_job_images_per_chapter),
+                image_model=_job_image_model,
+                art_style=_job_art_style,
+                # ── YouTube settings ────────────────────────────────────
+                enable_youtube_search=_batch_job_youtube,
                 # ── TTS settings from sidebar ───────────────────────────
                 enable_tts=_batch_enable_tts,
                 tts_voice=tts_voice,

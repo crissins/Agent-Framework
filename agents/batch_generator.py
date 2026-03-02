@@ -75,8 +75,8 @@ class BatchJobSpec:
     use_ddg_images: bool = False
     image_model: str = "qwen-image-plus"
     art_style: str = "auto"
-    images_per_chapter: int = 1
-    # ── TTS / Audio settings ─────────────────────────────────────────────
+    images_per_chapter: int = 1    # ── YouTube video search settings ────────────────────────────────
+    enable_youtube_search: bool = False    # ── TTS / Audio settings ─────────────────────────────────────────────
     enable_tts: bool = False
     tts_voice: str = "longxiaochun"
     tts_model: str = "qwen3-tts-vc-realtime"
@@ -406,6 +406,40 @@ def _run_job_in_thread(
                             + f"\n\n{_inject}"
                         )
                         log_fn(f"🖼️ {len(_found2)} AI image(s) → {_chapter.chapter_title[:40]}")
+
+        # ── YouTube video search ──────────────────────────────────────────
+        if spec.enable_youtube_search:
+            from agents.youtube_search_agent import search_videos_for_chapter as _yt_search
+            log_fn(f"🎬 Searching YouTube videos for {len(full_chapters)} chapters…")
+            _yt_loop = asyncio.new_event_loop()
+            try:
+                async def _yt_search_all():
+                    for _ch in full_chapters:
+                        try:
+                            _video_queries = re.findall(
+                                r'\[VIDEO:\s*([^\]]+)\]', _ch.markdown_content or ''
+                            )
+                            if not _video_queries:
+                                _video_queries = [
+                                    f"{_ch.chapter_title} {spec.language} educational"
+                                ]
+                            _videos = await _yt_search(
+                                chapter_title=_ch.chapter_title,
+                                video_queries=_video_queries,
+                                topic=spec.topic,
+                                language=spec.language,
+                                country=spec.country,
+                            )
+                            if _videos:
+                                _ch.youtube_videos = _videos
+                                log_fn(
+                                    f"🎬 {len(_videos)} video(s) → {_ch.chapter_title[:40]}"
+                                )
+                        except Exception as _ve:
+                            log_fn(f"⚠️ YouTube search failed for '{_ch.chapter_title[:30]}': {_ve}")
+                _yt_loop.run_until_complete(_yt_search_all())
+            finally:
+                _yt_loop.close()
 
         request_obj = BookRequest(
             topic=spec.topic,

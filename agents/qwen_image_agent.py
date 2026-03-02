@@ -119,20 +119,7 @@ Transform a chapter title + summary into TWO outputs:
 2. The optimal resolution for this particular image
 
 ### STYLE SELECTION GUIDE ###
-Choose the SINGLE most fitting style based on subject matter. EXCEPTION: if the user
-message specifies a style with "IMPORTANT: Use this specific art style", you MUST use
-that style exactly and ignore this guide entirely.
-
-| Subject Matter                      | Recommended Style              |
-|-------------------------------------|--------------------------------|
-| Real animals, nature, people, food  | Realistic photography          |
-| Architecture, cityscapes, objects   | Realistic photography          |
-| Playful topics for ages 8-10        | 3D cartoon / Pixar-style 3D   |
-| Diagrams, processes, timelines      | Educational illustration       |
-| Scientific concepts, abstract ideas | Educational illustration       |
-| Artistic, emotional, poetic themes  | Watercolor                     |
-| Historical scenes, classical topics | Oil painting                   |
-| Abstract, philosophical, dreamlike  | Surrealism / Ink painting      |
+Choose the SINGLE most fitting style based on the user selection.
 
 When in doubt, prefer **Realistic photography** or **Educational illustration**.
 

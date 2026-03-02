@@ -138,6 +138,20 @@ _EDGE_TTS_LANG_MAP = {
     "ko": "ko-KR-SunHiNeural",
 }
 
+# ── Standard (non-VC) preset voices for cosyvoice-v2 fallback ──────────────────
+STANDARD_FALLBACK_VOICE_MODEL = "cosyvoice-v2"
+STANDARD_FALLBACK_VOICES: dict[str, str] = {
+    "es": "longxiaochun",
+    "en": "longxiaochun",
+    "pt": "longxiaochun",
+    "fr": "longxiaochun",
+    "de": "longxiaochun",
+    "it": "longxiaochun",
+    "zh": "longxiaochun",
+    "ja": "longxiaochun",
+}
+
+
 # ── Supported TTS models (updated for Singapore) ─────────────────────────
 TTS_MODELS = {
     "qwen3-tts-vc-realtime": "Qwen3 TTS-VC Realtime – Voice cloning (Singapore)",
@@ -186,6 +200,52 @@ def _configure_dashscope():
 # ═══════════════════════════════════════════════════════════════════════════
 # VOICE ENROLLMENT (auto-enroll via Edge TTS reference)
 # ═══════════════════════════════════════════════════════════════════════════
+
+def _synthesize_with_standard_voice(text: str, language: str = "es") -> Optional[bytes]:
+    """
+    Fallback synthesis using DashScope cosyvoice-v2 preset voices.
+    No enrollment required — uses built-in voice names directly.
+    Returns WAV bytes, or None on failure.
+    """
+    try:
+        from dashscope.audio.tts_v2 import SpeechSynthesizer, AudioFormat as TtsAudioFormat
+    except ImportError:
+        logger.warning("[TTS-Fallback] dashscope.audio.tts_v2 not available")
+        return None
+
+    api_key = _get_api_key()
+    if not api_key:
+        return None
+
+    lang_key = normalize_language(language)
+    preset_voice = STANDARD_FALLBACK_VOICES.get(lang_key, "longxiaochun")
+
+    logger.warning(
+        f"⚠️ [TTS-Fallback] Using standard preset voice '{preset_voice}' "
+        f"(model={STANDARD_FALLBACK_VOICE_MODEL}) — enrollment unavailable"
+    )
+
+    try:
+        synth = SpeechSynthesizer(
+            model=STANDARD_FALLBACK_VOICE_MODEL,
+            voice=preset_voice,
+            api_key=api_key,
+        )
+        audio_bytes = synth.call(text)
+        if audio_bytes:
+            # tts_v2 returns MP3 by default — wrap in WAV-compatible bytes
+            logger.info(
+                f"✅ [TTS-Fallback] Standard voice OK: "
+                f"{len(audio_bytes):,} bytes, voice={preset_voice}"
+            )
+            return audio_bytes
+        else:
+            logger.error("[TTS-Fallback] Standard voice returned empty audio")
+            return None
+    except Exception as e:
+        logger.error(f"❌ [TTS-Fallback] Standard voice failed: {e}")
+        return None
+
 
 def _load_voice_registry() -> dict:
     """Load the voice registry from disk."""
@@ -408,15 +468,25 @@ def _ensure_enrolled_voice(
 
     logger.info(f"[TTS] No cached voice for '{cache_key}' — auto-enrolling...")
 
-    # Step 1: Generate reference audio with Edge TTS
-    ref_path = _generate_reference_audio(voice_name, language)
-    if not ref_path:
-        # Try with default voice
-        logger.warning("[TTS] Trying default Edge TTS voice for enrollment...")
-        ref_path = _generate_reference_audio("longxiaochun", language)
+    lang_key = language[:2].lower() if language else "es"
+
+    # Step 1: Use existing reference audio if already on disk (avoids regenerating)
+    existing_ref = VOICE_SAMPLES_DIR / f"ref_{voice_name}_{lang_key}.mp3"
+    if not existing_ref.exists():
+        existing_ref = VOICE_SAMPLES_DIR / f"ref_{voice_name}_{lang_key}.wav"
+    if existing_ref.exists() and existing_ref.stat().st_size > 1000:
+        logger.info(f"[TTS] Reusing existing reference audio: {existing_ref}")
+        ref_path = existing_ref
+    else:
+        # Step 1b: Generate reference audio with Edge TTS
+        ref_path = _generate_reference_audio(voice_name, language)
         if not ref_path:
-            logger.error("❌ [TTS] Cannot generate reference audio for enrollment")
-            return None
+            # Try with default voice
+            logger.warning("[TTS] Trying default Edge TTS voice for enrollment...")
+            ref_path = _generate_reference_audio("longxiaochun", language)
+            if not ref_path:
+                logger.error("❌ [TTS] Cannot generate reference audio for enrollment")
+                return None
 
     # Step 2: Enroll with DashScope
     # preferred_name: alphanumeric only, max 20 chars, no underscores
@@ -513,11 +583,11 @@ def synthesize_speech(
     # Ensure we have an enrolled voice
     voice_param = _ensure_enrolled_voice(voice, language)
     if not voice_param:
-        logger.error(
-            f"❌ [TTS] No enrolled voice available for '{voice}' ({language}). "
-            f"Auto-enrollment failed. Check network, API key, and edge-tts installation."
+        logger.warning(
+            f"⚠️ [TTS] Enrollment failed for '{voice}' ({language}) — "
+            f"falling back to standard preset voice."
         )
-        return None
+        return _synthesize_with_standard_voice(text, language)
 
     _t0 = time.perf_counter()
 
