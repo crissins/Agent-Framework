@@ -49,6 +49,18 @@ from utils.retry import sync_retry
 
 logger = logging.getLogger(__name__)
 
+# The DashScope SDK routes WebSocket close frames (opcode=8, code 1000 = Normal
+# Closure) through its on_error handler, which causes the underlying websocket-
+# client library to log a spurious ERROR. Filter it out at the source so it does
+# not pollute production logs or mislead monitoring.
+class _SuppressWsNormalClose(logging.Filter):
+    """Suppress websocket-client error logs that are actually normal close frames."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "opcode=8" not in msg and "fin=1 opcode=8" not in msg
+
+logging.getLogger("websocket").addFilter(_SuppressWsNormalClose())
+
 
 # ── Qwen3 TTS-VC constants ───────────────────────────────────────────────
 QWEN_TTS_VC_MODEL = "qwen3-tts-vc-realtime-2025-11-27"
@@ -695,6 +707,20 @@ def synthesize_speech(
 
         def on_close(self, code, msg):
             logger.debug(f"[TTS] WebSocket closed: code={code}")
+            complete_event.set()
+
+        def on_error(self, error):
+            # opcode=8 is a WebSocket close frame — the server said "Bye" cleanly.
+            # Close code 1000 (\x03\xe8) = Normal Closure. This is NOT a real error.
+            # The DashScope SDK incorrectly routes it through on_error; we intercept
+            # it here so complete_event is set immediately instead of timing out.
+            err_str = str(error)
+            if "opcode=8" in err_str or "fin=1 opcode=8" in err_str:
+                logger.debug("[TTS] WebSocket closed normally (opcode=8) — synthesis complete")
+                complete_event.set()
+                return
+            errors.append(err_str)
+            logger.error(f"❌ [TTS] WebSocket error: {err_str}")
             complete_event.set()
 
         def on_event(self, response: dict):

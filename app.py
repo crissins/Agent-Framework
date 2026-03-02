@@ -1113,19 +1113,14 @@ with _tab_batch:
             )
 
             # ── Feature toggles ────────────────────────────────────────────────────
-            _ft_a, _ft_b, _ft_c = st.columns(3)
-            _batch_job_youtube = _ft_a.checkbox(
-                "🎬 YouTube Search",
-                value=False,
-                key=f"bj_yt_{idx}",
-                help="Find relevant YouTube videos and embed QR codes in each chapter.",
-            )
-            _job_enable_images = _ft_b.checkbox(
+            _batch_job_youtube = False
+            _ft_a, _ft_b = st.columns(2)
+            _job_enable_images = _ft_a.checkbox(
                 "🖼️ Generate Images",
                 value=False,
                 key=f"bj_img_en_{idx}",
             )
-            _job_enable_tts = _ft_c.checkbox(
+            _job_enable_tts = _ft_b.checkbox(
                 "🔊 Audio Narration",
                 value=False,
                 key=f"bj_tts_en_{idx}",
@@ -1518,13 +1513,7 @@ with _tab_form:
             disabled=not _form_ai_images,
         )
 
-    # ── YouTube Video Search (form tab only — not used in audio-only workflow) ──
-    _form_enable_video_search = st.checkbox(
-        "🎬 YouTube Video Search",
-        value=False,
-        key="form_enable_video_search",
-        help="Find relevant YouTube videos and embed QR codes in each chapter. Not available in audio-only mode.",
-    )
+    _form_enable_video_search = False
 
     # ── Accessibility ──────────────────────────────────────────────────
     _accb = st.columns(1)[0]
